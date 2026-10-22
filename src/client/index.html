@@ -14,8 +14,34 @@
 </head>
 <body>
   <h1>Clue-Less</h1>
-  <p id="status">Connecting...</p>
+    <!-- Main page -->
+    <label>Open games</label>
+    <ul id="game-list"></ul>
+
+    <section id="home-view" class="view">
+      <div class="card home-card">
+ 
+        <label for="display-name">Your name</label>
+        <input id="display-name" type="text" maxlength="20" autocomplete="nickname">
+ 
+        <div class="button-row">
+          <button id="create-btn" class="btn btn--primary">Create Game</button>
+          <button id="join-btn" class="btn">Join Game</button>
+        </div>
+ 
+        <div id="join-panel" class="join-panel" hidden>
+          <label for="game-id">Game ID</label>
+          <div class="input-row">
+            <input id="game-id" type="text" autocomplete="off" placeholder="Enter the host's Game ID">
+            <button id="join-submit-btn" class="btn btn--primary">Join</button>
+          </div>
+        </div>
+ 
+        <p id="home-error" class="error" role="alert"></p>
+      </div>
+    </section>
+
   <script src="/socket.io/socket.io.js"></script>
-  <script src="index.js"></script>
+  <script type="module" src="index.js"></script>
 </body>
 </html>
