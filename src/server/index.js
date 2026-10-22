@@ -61,6 +61,7 @@ io.on("connection", (socket) => {
     socket.join(gameId);
 
     callback({ ok: true, gameId, playerId, host: hostName });
+    console.log(`Server: Game ${gameId} created by ${hostName}`);
     sendPlayers(gameId);
     broadcastGameList();
   });

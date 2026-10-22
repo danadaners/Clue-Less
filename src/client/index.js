@@ -25,7 +25,7 @@ createBtn.addEventListener("click", () => {
       return;
     }
 
-    console.log(`Game created by ${res.host} with ID ${res.gameId}`)
+    console.log(`Client: Game ${res.gameId} created by ${res.host}`)
   });
 
 });
