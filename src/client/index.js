@@ -24,6 +24,8 @@ createBtn.addEventListener("click", () => {
       console.error(res.error);
       return;
     }
+
+    console.log(`Game created by ${res.host} with ID ${res.gameId}`)
   });
 
 });
