@@ -5,41 +5,144 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Clue-Less</title>
   <style>
+    :root {
+      --classic-blue: #0F4C81;
+      --dark-blue: #202C4C;
+    }
     body {
       font-family: Arial, sans-serif;
       text-align: center;
-      margin-top: 100px;
+      margin: 24px;
+      background: #fff;
+      color: var(--dark-blue);
+    }
+    .logo {
+      display: block;
+      width: 140px;
+      height: auto;
+      margin: 0 auto 8px;
+    }
+    h1,
+    h2 {
+      margin: 0 0 16px;
+      color: var(--classic-blue);
+    }
+    .name-field {
+      margin-bottom: 16px;
+    }
+    #display-name {
+      display: block;
+      width: 220px;
+      margin: 0 auto;
+    }
+    .btn {
+      background: #fff;
+      color: var(--classic-blue);
+      border: 1px solid var(--classic-blue);
+      padding: 6px 12px;
+    }
+    .btn--primary {
+      background: var(--classic-blue);
+      color: #fff;
+    }
+    .boards {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .join-panel {
+      margin-top: 16px;
+      min-height: 32px;
+      visibility: hidden;
+    }
+    .join-panel.is-open {
+      visibility: visible;
+    }
+    .board {
+      flex: 1 1 280px;
+      max-width: 420px;
+    }
+    #game-list,
+    #player-list {
+      list-style: none;
+      padding: 12px;
+      margin: 0;
+      min-height: 240px;
+      background-color: #e7eef4;
+      border: 2px solid var(--classic-blue);
+      text-align: left;
+    }
+    #game-list {
+      height: 240px;
+      overflow-y: auto;
+    }
+    #game-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+    }
+    #game-list li + li,
+    #player-list li + li {
+      margin-top: 6px;
+    }
+    .game-code {
+      color: var(--classic-blue);
+      font-weight: 700;
+    }
+    .game-id-row {
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--classic-blue);
+      color: var(--dark-blue);
+      font-weight: 700;
+    }
+    .error {
+      color: #9b1c1c;
     }
   </style>
 </head>
 <body>
+  <img class="logo" src="assets/ncc-logo.png" alt="No Clue Crew logo">
   <h1>Clue-Less</h1>
-    <!-- Main page -->
-    <label>Games List</label>
-    <ul id="game-list" style="background-color: #abfffb;"></ul>
 
-    <section id="home-view" class="view">
-      <div class="card home-card">
- 
-        <label for="display-name">Your name</label>
-        <input id="display-name" type="text" maxlength="20" autocomplete="nickname">
- 
-        <div class="button-row">
-          <button id="create-btn" class="btn btn--primary">Create Game</button>
-          <button id="join-btn" class="btn">Join Game</button>
-        </div>
- 
-        <div id="join-panel" class="join-panel" hidden>
-          <label for="game-id">Game ID</label>
-          <div class="input-row">
-            <input id="game-id" type="text" autocomplete="off" placeholder="Enter the host's Game ID">
-            <button id="join-submit-btn" class="btn btn--primary">Join</button>
-          </div>
-        </div>
- 
-        <p id="home-error" class="error" role="alert"></p>
+  <div class="name-field">
+    <input id="display-name" type="text" maxlength="20" autocomplete="nickname" placeholder="enter your name" aria-label="Enter your name">
+  </div>
+
+  <section id="home-view" class="view">
+    <div class="card home-card">
+      <div class="button-row">
+        <button id="create-btn" class="btn btn--primary">Create Game</button>
+        <button id="join-btn" class="btn">Join Game</button>
       </div>
+
+      <div id="join-panel" class="join-panel">
+        <div class="input-row">
+          <input id="game-id" type="text" autocomplete="off" placeholder="enter the game id" aria-label="Enter the game id">
+          <button id="join-submit-btn" class="btn btn--primary">Join</button>
+        </div>
+      </div>
+
+      <p id="home-error" class="error" role="alert"></p>
+    </div>
+  </section>
+
+  <div class="boards">
+    <section class="board">
+      <h2>Games List</h2>
+      <ul id="game-list"></ul>
     </section>
+
+    <section id="lobby-view" class="board">
+      <h2>Lobby</h2>
+      <ul id="player-list">
+        <li id="lobby-game-row" class="game-id-row">Game ID: <strong id="lobby-game-id"></strong></li>
+      </ul>
+    </section>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="index.js"></script>
