@@ -5,9 +5,6 @@
  * and the request payload. This skeletal version checks that interface and
  * then refuses the action. It does not change game state. The Minimal
  * increment replaces the refusal with the real rules.
- *
- * This folder is an ES module so Communication can import it. The server
- * entry on this branch still uses require, so the module flag lives here.
  */
 
 import {
