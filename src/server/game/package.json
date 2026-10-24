@@ -1,0 +1,7 @@
+{
+  "//": [
+    "Delete this file once Dana pushes her root package.json with type set to module.",
+    "Only needed this temporarily for 'import' to work when I was testing my changes."
+  ],
+  "type": "module"
+}
