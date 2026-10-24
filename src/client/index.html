@@ -10,6 +10,13 @@
       text-align: center;
       margin-top: 100px;
     }
+    #player-list {
+      list-style: none;
+      padding: 0;
+    }
+    .error {
+      color: #9b1c1c;
+    }
   </style>
 </head>
 <body>
@@ -39,6 +46,12 @@
  
         <p id="home-error" class="error" role="alert"></p>
       </div>
+    </section>
+
+    <section id="lobby-view" hidden>
+      <h2>Lobby</h2>
+      <p>Game ID: <strong id="lobby-game-id"></strong></p>
+      <ul id="player-list"></ul>
     </section>
 
   <script src="/socket.io/socket.io.js"></script>

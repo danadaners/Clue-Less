@@ -3,7 +3,7 @@ import http from "node:http";
 import express from "express";
 import { Server } from "socket.io";
 import { randomUUID, randomInt } from "crypto";
-import { CLIENT, PRIVATE } from "../shared/messages.js";
+import { CLIENT, PRIVATE, PUBLIC } from "../shared/messages.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -34,7 +34,12 @@ function broadcastGameList() {
 
 function sendPlayers(gameId) {
   const game = games.get(gameId);
-  io.to(gameId).emit("players", [...game.players.values()]);
+  const players = [...game.players.values()].map((player) => ({
+    id: player.id,
+    name: player.name,
+    isHost: player.id === game.hostId,
+  }));
+  io.to(gameId).emit(PUBLIC.LOBBY_UPDATE, { gameId, players });
 }
 
 io.on("connection", (socket) => {
@@ -62,6 +67,41 @@ io.on("connection", (socket) => {
 
     callback({ ok: true, gameId, playerId, host: hostName });
     console.log(`Server: Game ${gameId} created by ${hostName}`);
+    sendPlayers(gameId);
+    broadcastGameList();
+  });
+
+  socket.on(CLIENT.JOIN_GAME, ({ playerName, gameId } = {}, callback) => {
+    playerName = String(playerName || "")
+      .trim()
+      .slice(0, 24);
+    gameId = String(gameId || "")
+      .trim()
+      .toUpperCase();
+
+    if (!playerName) {
+      return callback({ ok: false, error: "Name is required." });
+    }
+    if (!gameId) {
+      return callback({ ok: false, error: "Game ID is required." });
+    }
+    if (socket.data.gameId) {
+      return callback({ ok: false, error: "You are already in a game." });
+    }
+
+    const game = games.get(gameId);
+    if (!game) {
+      return callback({ ok: false, error: "Game not found." });
+    }
+
+    const playerId = randomUUID();
+    game.players.set(playerId, { id: playerId, name: playerName });
+    socket.data.gameId = gameId;
+    socket.data.playerId = playerId;
+    socket.join(gameId);
+
+    callback({ ok: true, gameId, playerId });
+    console.log(`Server: ${playerName} joined game ${gameId}`);
     sendPlayers(gameId);
     broadcastGameList();
   });
