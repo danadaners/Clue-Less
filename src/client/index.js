@@ -33,7 +33,8 @@ function showLobby(gameId) {
 }
 
 function renderPlayers(players) {
-  playerList.replaceChildren();
+  const gameRow = $("lobby-game-row");
+  playerList.replaceChildren(gameRow);
   for (const player of players) {
     const li = document.createElement("li");
     li.textContent = player.isHost ? `${player.name} (host)` : player.name;
@@ -61,7 +62,7 @@ createBtn.addEventListener("click", () => {
 });
 
 joinBtn.addEventListener("click", () => {
-  joinPanel.hidden = !joinPanel.hidden;
+  joinPanel.classList.toggle("is-open");
 });
 
 joinSubmitBtn.addEventListener("click", () => {
@@ -98,11 +99,12 @@ socket.on("gameList", (games) => {
 
   for (const { gameId, host } of games) {
     const li = document.createElement("li");
-    li.textContent = `${host}'s game`;
-    const id = document.createElement("div");
-    id.className = "muted";
+    const name = document.createElement("span");
+    name.textContent = `${host}'s game`;
+    const id = document.createElement("span");
+    id.className = "game-code";
     id.textContent = gameId;
-    li.appendChild(id);
+    li.append(name, id);
     list.appendChild(li);
   }
 });
