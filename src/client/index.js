@@ -37,27 +37,29 @@ function renderPlayers(players) {
   playerList.replaceChildren(gameRow);
   for (const player of players) {
     const li = document.createElement("li");
-    li.textContent = player.isHost ? `${player.name} (host)` : player.name;
+    li.textContent = player.isHost
+      ? `${player.displayName} (host)`
+      : player.displayName;
     playerList.appendChild(li);
   }
 }
 
 // Create Game
 createBtn.addEventListener("click", () => {
-  const hostName = nameInput.value.trim();
-  if (!hostName) {
+  const displayName = nameInput.value.trim();
+  if (!displayName) {
     showError("Name cannot be blank.");
     return;
   }
   clearError();
-  socket.emit(CLIENT.CREATE_GAME, { hostName }, (res) => {
+  socket.emit(CLIENT.CREATE_GAME, { displayName }, (res) => {
     if (!res || !res.ok) {
       showError(res?.error || "Could not create the game.");
       return;
     }
 
     showLobby(res.gameId);
-    console.log(`Client: Game ${res.gameId} created by ${res.host}`);
+    console.log(`Client: Game ${res.gameId} created by ${res.displayName}`);
   });
 });
 
@@ -66,9 +68,9 @@ joinBtn.addEventListener("click", () => {
 });
 
 joinSubmitBtn.addEventListener("click", () => {
-  const playerName = nameInput.value.trim();
+  const displayName = nameInput.value.trim();
   const gameId = gameIdInput.value.trim().toUpperCase();
-  if (!playerName) {
+  if (!displayName) {
     showError("Name cannot be blank.");
     return;
   }
@@ -77,14 +79,14 @@ joinSubmitBtn.addEventListener("click", () => {
     return;
   }
   clearError();
-  socket.emit(CLIENT.JOIN_GAME, { playerName, gameId }, (res) => {
+  socket.emit(CLIENT.JOIN_GAME, { displayName, gameId }, (res) => {
     if (!res || !res.ok) {
       showError(res?.error || "Could not join the game.");
       return;
     }
 
     showLobby(res.gameId);
-    console.log(`Client: ${playerName} joined game ${res.gameId}`);
+    console.log(`Client: ${displayName} joined game ${res.gameId}`);
   });
 });
 
