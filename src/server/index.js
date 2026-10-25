@@ -2,8 +2,9 @@ import path from "node:path";
 import http from "node:http";
 import express from "express";
 import { Server } from "socket.io";
-import { randomUUID, randomInt } from "crypto";
+import { randomInt } from "crypto";
 import { CLIENT, PRIVATE, PUBLIC } from "../shared/messages.js";
+import { admitPlayer } from "./session/admitPlayer.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -55,7 +56,10 @@ io.on("connection", (socket) => {
     }
 
     const gameId = generateGameId();
-    const playerId = randomUUID();
+    console.log(
+      `Communication: calling Session.admitPlayer for ${hostName} in game ${gameId}`,
+    );
+    const { playerId } = admitPlayer({ gameId, displayName: hostName });
 
     const players = new Map();
     players.set(playerId, { id: playerId, name: hostName });
@@ -94,7 +98,10 @@ io.on("connection", (socket) => {
       return callback({ ok: false, error: "Game not found." });
     }
 
-    const playerId = randomUUID();
+    console.log(
+      `Communication: calling Session.admitPlayer for ${playerName} in game ${gameId}`,
+    );
+    const { playerId } = admitPlayer({ gameId, displayName: playerName });
     game.players.set(playerId, { id: playerId, name: playerName });
     socket.data.gameId = gameId;
     socket.data.playerId = playerId;
