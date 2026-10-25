@@ -23,7 +23,7 @@ const games = new Map();
 function gameList() {
   return [...games.entries()].map(([gameId, game]) => ({
     gameId,
-    host: game.players.get(game.hostId).name,
+    host: game.players.get(game.hostId).displayName,
     playerCount: game.players.size,
   }));
 }
@@ -33,57 +33,65 @@ function broadcastGameList() {
   io.emit("gameList", gameList());
 }
 
+
 function sendPlayers(gameId) {
   const game = games.get(gameId);
   const players = [...game.players.values()].map((player) => ({
     id: player.id,
-    name: player.name,
+    displayName: player.displayName,
     isHost: player.id === game.hostId,
   }));
   io.to(gameId).emit(PUBLIC.LOBBY_UPDATE, { gameId, players });
 }
 
+function sendMessageToPlayer(gameId, playerId, message)
+{
+  const game = games.get(gameId);
+  const player = game.players.get(playerId);
+  player.socket.emit(PRIVATE.MESSAGE, {message});
+}
+
 io.on("connection", (socket) => {
   socket.emit("gameList", gameList());
 
-  socket.on(CLIENT.CREATE_GAME, ({ hostName }, callback) => {
-    hostName = String(hostName || "")
+  socket.on(CLIENT.CREATE_GAME, ({ displayName }, callback) => {
+    displayName = String(displayName || "")
       .trim()
       .slice(0, 24);
 
-    if (!hostName) {
-      return callback({ ok: false, error: "Host name is required." });
+    if (!displayName) {
+      return callback({ ok: false, error: "Name is required." });
     }
 
     const gameId = generateGameId();
     console.log(
-      `Communication: calling Session.admitPlayer for ${hostName} in game ${gameId}`,
+      `Communication: calling Session.admitPlayer for ${displayName} in game ${gameId}`,
     );
-    const { playerId } = admitPlayer({ gameId, displayName: hostName });
+    const { playerId } = admitPlayer({ gameId, displayName });
 
     const players = new Map();
-    players.set(playerId, { id: playerId, name: hostName });
+    players.set(playerId, { id: playerId, displayName, socket: socket });
     games.set(gameId, { hostId: playerId, players });
 
     socket.data.gameId = gameId;
     socket.data.playerId = playerId;
     socket.join(gameId);
 
-    callback({ ok: true, gameId, playerId, host: hostName });
-    console.log(`Server: Game ${gameId} created by ${hostName}`);
+    callback({ ok: true, gameId, playerId, displayName });
+    console.log(`Server: Game ${gameId} created by ${displayName}`);
     sendPlayers(gameId);
     broadcastGameList();
   });
 
-  socket.on(CLIENT.JOIN_GAME, ({ playerName, gameId } = {}, callback) => {
-    playerName = String(playerName || "")
+  socket.on(CLIENT.JOIN_GAME, ({ displayName, gameId } = {}, callback) => {
+    displayName = String(displayName || "")
       .trim()
       .slice(0, 24);
     gameId = String(gameId || "")
       .trim()
       .toUpperCase();
 
-    if (!playerName) {
+    if (!displayName) {
       return callback({ ok: false, error: "Name is required." });
     }
     if (!gameId) {
@@ -99,17 +107,20 @@ io.on("connection", (socket) => {
     }
 
     console.log(
-      `Communication: calling Session.admitPlayer for ${playerName} in game ${gameId}`,
+      `Communication: calling Session.admitPlayer for ${displayName} in game ${gameId}`,
     );
-    const { playerId } = admitPlayer({ gameId, displayName: playerName });
-    game.players.set(playerId, { id: playerId, name: playerName });
+    const { playerId } = admitPlayer({ gameId, displayName });
+    game.players.set(playerId, { id: playerId, displayName });
     socket.data.gameId = gameId;
     socket.data.playerId = playerId;
     socket.join(gameId);
 
     callback({ ok: true, gameId, playerId });
-    console.log(`Server: ${playerName} joined game ${gameId}`);
+    console.log(`Server: ${displayName} joined game ${gameId}`);
     sendPlayers(gameId);
+
+    const message = `${displayName} has joined your game!`
+    sendMessageToPlayer(gameId, game.hostId, message);
     broadcastGameList();
   });
 });

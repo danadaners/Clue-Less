@@ -31,6 +31,7 @@ export const PRIVATE = Object.freeze({
   DISPROVAL_RESULT: "disproval_result",
   RECONNECT_SUCCESS: "reconnect_success",
   STATE_SNAPSHOT: "state_snapshot",
+  MESSAGE:        "private_message"
 });
 
 // Public events
