@@ -33,6 +33,7 @@ function broadcastGameList() {
   io.emit("gameList", gameList());
 }
 
+
 function sendPlayers(gameId) {
   const game = games.get(gameId);
   const players = [...game.players.values()].map((player) => ({
@@ -41,6 +42,13 @@ function sendPlayers(gameId) {
     isHost: player.id === game.hostId,
   }));
   io.to(gameId).emit(PUBLIC.LOBBY_UPDATE, { gameId, players });
+}
+
+function sendMessageToPlayer(gameId, playerId, message)
+{
+  const game = games.get(gameId);
+  const player = game.players.get(playerId);
+  player.socket.emit(PRIVATE.MESSAGE, {message});
 }
 
 io.on("connection", (socket) => {
@@ -62,7 +70,7 @@ io.on("connection", (socket) => {
     const { playerId } = admitPlayer({ gameId, displayName });
 
     const players = new Map();
-    players.set(playerId, { id: playerId, displayName });
+    players.set(playerId, { id: playerId, displayName, socket: socket });
     games.set(gameId, { hostId: playerId, players });
 
     socket.data.gameId = gameId;
@@ -110,6 +118,9 @@ io.on("connection", (socket) => {
     callback({ ok: true, gameId, playerId });
     console.log(`Server: ${displayName} joined game ${gameId}`);
     sendPlayers(gameId);
+
+    const message = `${displayName} has joined your game!`
+    sendMessageToPlayer(gameId, game.hostId, message);
     broadcastGameList();
   });
 });

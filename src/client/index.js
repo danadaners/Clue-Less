@@ -18,6 +18,7 @@ const homeError = $("home-error");
 const lobbyView = $("lobby-view");
 const lobbyGameId = $("lobby-game-id");
 const playerList = $("player-list");
+const privateMessageDialog = $("dialog-box")
 
 function showError(message) {
   homeError.textContent = message;
@@ -30,6 +31,17 @@ function clearError() {
 function showLobby(gameId) {
   lobbyGameId.textContent = gameId;
   lobbyView.hidden = false;
+}
+
+function showDialog(message)
+{
+  privateMessageDialog.textContent = message;
+  privateMessageDialog.show();
+  var millisecondsToWait = 3000;
+  setTimeout(function() {
+      privateMessageDialog.close();
+  }, millisecondsToWait);
+
 }
 
 function renderPlayers(players) {
@@ -114,4 +126,10 @@ socket.on("gameList", (games) => {
 socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players }) => {
   showLobby(gameId);
   renderPlayers(players);
+  showDialog("Lobby has been updated!")
 });
+
+socket.on(PRIVATE.MESSAGE, ({message}) => {
+  console.log(message)
+  showDialog(message);
+})
