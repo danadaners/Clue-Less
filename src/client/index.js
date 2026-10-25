@@ -126,7 +126,6 @@ socket.on("gameList", (games) => {
 socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players }) => {
   showLobby(gameId);
   renderPlayers(players);
-  showDialog("Lobby has been updated!")
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {
