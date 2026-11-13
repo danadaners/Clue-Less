@@ -20,6 +20,20 @@ const lobbyGameId = $("lobby-game-id");
 const playerList = $("player-list");
 const privateMessageDialog = $("dialog-box")
 
+// Character selection
+const characterPicker = $("character-picker");
+const characterButtons = $("character-buttons");
+const characterError = $("character-error");
+
+const CHARACTER_NAMES = {
+  miss_scarlet: "Miss Scarlet",
+  colonel_mustard: "Colonel Mustard",
+  mrs_white: "Mrs. White",
+  mr_green: "Mr. Green",
+  mrs_peacock: "Mrs. Peacock",
+  professor_plum: "Professor Plum",
+};
+
 function showError(message) {
   homeError.textContent = message;
 }
@@ -49,11 +63,41 @@ function renderPlayers(players) {
   playerList.replaceChildren(gameRow);
   for (const player of players) {
     const li = document.createElement("li");
-    li.textContent = player.isHost
-      ? `${player.displayName} (host)`
-      : player.displayName;
+    let text = player.isHost ? `${player.displayName} (host)` : player.displayName;
+    if (player.characterId) text += ` - ${CHARACTER_NAMES[player.characterId]}`;
+    li.textContent = text;
     playerList.appendChild(li);
   }
+}
+
+/**
+ * One button per character. Characters other players have taken are disabled;
+ * your own choice is highlighted.
+ */
+function renderCharacters(players, availableCharacters) {
+  const me = players.find((p) => p.id === myPlayerId);
+  characterButtons.replaceChildren();
+  for (const [characterId, name] of Object.entries(CHARACTER_NAMES)) {
+    const button = document.createElement("button");
+    const mine = me?.characterId === characterId;
+    button.className = mine ? "btn btn--primary" : "btn";
+    button.textContent = name;
+    button.disabled = !mine && !availableCharacters.includes(characterId);
+    button.addEventListener("click", () => selectCharacter(characterId));
+    characterButtons.appendChild(button);
+  }
+  characterPicker.hidden = false;
+}
+
+function selectCharacter(characterId) {
+  characterError.textContent = "";
+  socket.emit(CLIENT.SELECT_CHARACTER, { characterId }, (res) => {
+    if (!res || !res.ok) {
+      characterError.textContent = res?.error || "Could not select that character.";
+      return;
+    }
+    console.log(`Client: selected ${CHARACTER_NAMES[res.characterId]}`);
+  });
 }
 
 // Create Game
@@ -123,9 +167,10 @@ socket.on("gameList", (games) => {
   }
 });
 
-socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players }) => {
+socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players, availableCharacters }) => {
   showLobby(gameId);
   renderPlayers(players);
+  renderCharacters(players, availableCharacters);
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {

@@ -5,6 +5,8 @@ import { Server } from "socket.io";
 import { randomInt } from "crypto";
 import { CLIENT, PRIVATE, PUBLIC } from "../shared/messages.js";
 import { admitPlayer } from "./session/admitPlayer.js";
+import { SUSPECT_IDS } from "./game/catalog.js";
+import { Lobby } from "./game/Lobby.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -39,9 +41,13 @@ function sendPlayers(gameId) {
   const players = [...game.players.values()].map((player) => ({
     id: player.id,
     displayName: player.displayName,
+    characterId: player.characterId ?? null,
     isHost: player.id === game.hostId,
   }));
-  io.to(gameId).emit(PUBLIC.LOBBY_UPDATE, { gameId, players });
+  const taken = new Set(players.map((p) => p.characterId).filter(Boolean));
+  const availableCharacters = SUSPECT_IDS.filter((c) => !taken.has(c));
+  const canStart = game.lobby.canStart(players.length);
+  io.to(gameId).emit(PUBLIC.LOBBY_UPDATE, { gameId, players, availableCharacters, canStart });
 }
 
 function sendMessageToPlayer(gameId, playerId, message)
@@ -71,7 +77,7 @@ io.on("connection", (socket) => {
 
     const players = new Map();
     players.set(playerId, { id: playerId, displayName, socket: socket });
-    games.set(gameId, { hostId: playerId, players });
+    games.set(gameId, { hostId: playerId, players, lobby: new Lobby(playerId) });
 
     socket.data.gameId = gameId;
     socket.data.playerId = playerId;
@@ -122,6 +128,29 @@ io.on("connection", (socket) => {
     const message = `${displayName} has joined your game!`
     sendMessageToPlayer(gameId, game.hostId, message);
     broadcastGameList();
+  });
+
+    socket.on(CLIENT.SELECT_CHARACTER, ({ characterId } = {}, callback) => {
+    const { gameId, playerId } = socket.data;
+    const game = games.get(gameId);
+    if (!game) {
+      return callback({ ok: false, error: "Join a game first." });
+    }
+    if (!SUSPECT_IDS.includes(characterId)) {
+      return callback({ ok: false, error: "Unknown character." });
+    }
+
+    console.log(`Communication: calling Lobby.selectCharacter(${characterId}) in game ${gameId}`);
+    try {
+      game.lobby.selectCharacter(playerId, characterId);
+    } catch (err) {
+      return callback({ ok: false, error: err.message });
+    }
+    game.players.get(playerId).characterId = characterId;
+
+    callback({ ok: true, characterId });
+    console.log(`Server: ${game.players.get(playerId).displayName} selected ${characterId}`);
+    sendPlayers(gameId);
   });
 });
 

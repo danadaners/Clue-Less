@@ -102,6 +102,25 @@
     .error {
       color: #9b1c1c;
     }
+        .character-picker {
+      margin-top: 16px;
+    }
+    .character-picker h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+    #character-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+    }
+    #character-buttons .btn:disabled {
+      opacity: 0.4;
+    }
+    .error {
+      color: #9b1c1c;
+    }
   </style>
 </head>
 <body>
@@ -137,12 +156,16 @@
       <h2>Games List</h2>
       <ul id="game-list"></ul>
     </section>
-
     <section id="lobby-view" class="board">
       <h2>Lobby</h2>
       <ul id="player-list">
         <li id="lobby-game-row" class="game-id-row">Game ID: <strong id="lobby-game-id"></strong></li>
       </ul>
+      <div id="character-picker" class="character-picker" hidden>
+        <h3>Choose your character</h3>
+        <div id="character-buttons"></div>
+        <p id="character-error" class="error" role="alert"></p>
+      </div>
     </section>
   </div>
 
