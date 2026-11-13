@@ -20,6 +20,31 @@ const lobbyGameId = $("lobby-game-id");
 const playerList = $("player-list");
 const privateMessageDialog = $("dialog-box")
 
+// Character selection
+const characterPicker = $("character-picker");
+const characterButtons = $("character-buttons");
+const characterError = $("character-error");
+
+const CHARACTER_NAMES = {
+  miss_scarlet: "Miss Scarlet",
+  colonel_mustard: "Colonel Mustard",
+  mrs_white: "Mrs. White",
+  mr_green: "Mr. Green",
+  mrs_peacock: "Mrs. Peacock",
+  professor_plum: "Professor Plum",
+};
+
+// Start game (host only) and the placeholder game screen
+const lobbyActions = $("lobby-actions");
+const startBtn = $("start-btn");
+const startHint = $("start-hint");
+const homeView = $("home-view");
+const nameField = document.querySelector(".name-field");
+const boards = document.querySelector(".boards");
+const gameView = $("game-view");
+
+let myPlayerId = null;
+
 function showError(message) {
   homeError.textContent = message;
 }
@@ -49,11 +74,78 @@ function renderPlayers(players) {
   playerList.replaceChildren(gameRow);
   for (const player of players) {
     const li = document.createElement("li");
-    li.textContent = player.isHost
-      ? `${player.displayName} (host)`
-      : player.displayName;
+    let text = player.isHost ? `${player.displayName} (host)` : player.displayName;
+    if (player.characterId) text += ` - ${CHARACTER_NAMES[player.characterId]}`;
+    li.textContent = text;
     playerList.appendChild(li);
   }
+}
+
+/**
+ * One button per character. Characters other players have taken are disabled;
+ * your own choice is highlighted.
+ */
+function renderCharacters(players, availableCharacters) {
+  const me = players.find((p) => p.id === myPlayerId);
+  characterButtons.replaceChildren();
+  for (const [characterId, name] of Object.entries(CHARACTER_NAMES)) {
+    const button = document.createElement("button");
+    const mine = me?.characterId === characterId;
+    button.className = mine ? "btn btn--primary" : "btn";
+    button.textContent = name;
+    button.disabled = !mine && !availableCharacters.includes(characterId);
+    button.addEventListener("click", () => selectCharacter(characterId));
+    characterButtons.appendChild(button);
+  }
+  characterPicker.hidden = false;
+}
+
+function selectCharacter(characterId) {
+  characterError.textContent = "";
+  socket.emit(CLIENT.SELECT_CHARACTER, { characterId }, (res) => {
+    if (!res || !res.ok) {
+      characterError.textContent = res?.error || "Could not select that character.";
+      return;
+    }
+    console.log(`Client: selected ${CHARACTER_NAMES[res.characterId]}`);
+  });
+}
+
+/** Only the host sees Start Game; it's enabled once the server says the lobby is ready. */
+function renderStartButton(players, canStart) {
+  const me = players.find((p) => p.id === myPlayerId);
+  if (!me?.isHost) {
+    lobbyActions.hidden = true;
+    return;
+  }
+  lobbyActions.hidden = false;
+  startBtn.disabled = !canStart;
+  startHint.textContent = canStart ? "" : "Waiting for 3-6 players to choose characters.";
+}
+
+startBtn.addEventListener("click", () => {
+  socket.emit(CLIENT.START_GAME, {}, (res) => {
+    if (!res || !res.ok) {
+      startHint.textContent = res?.error || "Could not start the game.";
+    }
+  });
+});
+
+/** Placeholder game screen: hides the home and lobby, shows the game view. */
+function showGameScreen(gameId, players) {
+  homeView.hidden = true;
+  nameField.hidden = true;
+  boards.hidden = true;
+  $("game-view-id").textContent = gameId;
+  const list = $("game-player-list");
+  list.replaceChildren();
+  for (const player of players) {
+    const li = document.createElement("li");
+    const you = player.id === myPlayerId ? " (you)" : "";
+    li.textContent = `${CHARACTER_NAMES[player.characterId]} - ${player.displayName}${you}`;
+    list.appendChild(li);
+  }
+  gameView.hidden = false;
 }
 
 // Create Game
@@ -70,6 +162,7 @@ createBtn.addEventListener("click", () => {
       return;
     }
 
+    myPlayerId = res.playerId;
     showLobby(res.gameId);
     console.log(`Client: Game ${res.gameId} created by ${res.displayName}`);
   });
@@ -97,6 +190,7 @@ joinSubmitBtn.addEventListener("click", () => {
       return;
     }
 
+    myPlayerId = res.playerId;
     showLobby(res.gameId);
     console.log(`Client: ${displayName} joined game ${res.gameId}`);
   });
@@ -123,9 +217,16 @@ socket.on("gameList", (games) => {
   }
 });
 
-socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players }) => {
+socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players, availableCharacters, canStart }) => {
   showLobby(gameId);
   renderPlayers(players);
+  renderCharacters(players, availableCharacters);
+  renderStartButton(players, canStart);
+});
+
+socket.on(PRIVATE.GAME_STARTED, ({ gameId, players }) => {
+  console.log(`Client: game ${gameId} started`);
+  showGameScreen(gameId, players);
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {

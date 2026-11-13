@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Clue-Less</title>
   <style>
+    [hidden] {
+      display: none !important;
+    }
     :root {
       --classic-blue: #0F4C81;
       --dark-blue: #202C4C;
@@ -102,6 +105,48 @@
     .error {
       color: #9b1c1c;
     }
+        .character-picker {
+      margin-top: 16px;
+    }
+    .character-picker h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+    #character-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+    }
+    #character-buttons .btn:disabled {
+      opacity: 0.4;
+    }
+    .error {
+      color: #9b1c1c;
+    }
+    .lobby-actions {
+      margin-top: 12px;
+    }
+    #game-view {
+      max-width: 640px;
+      margin: 20px auto 0;
+    }
+    .board-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 320px;
+      margin: 16px 0;
+      background-color: #e7eef4;
+      border: 2px dashed var(--classic-blue);
+      color: var(--classic-blue);
+      font-weight: 700;
+    }
+    #game-player-list {
+      list-style: none;
+      padding: 0;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
@@ -137,14 +182,29 @@
       <h2>Games List</h2>
       <ul id="game-list"></ul>
     </section>
-
     <section id="lobby-view" class="board">
       <h2>Lobby</h2>
       <ul id="player-list">
         <li id="lobby-game-row" class="game-id-row">Game ID: <strong id="lobby-game-id"></strong></li>
       </ul>
+      <div id="character-picker" class="character-picker" hidden>
+        <h3>Choose your character</h3>
+        <div id="character-buttons"></div>
+        <p id="character-error" class="error" role="alert"></p>
+      </div>
+      <div id="lobby-actions" class="lobby-actions" hidden>
+        <button id="start-btn" class="btn btn--primary" disabled>Start Game</button>
+        <p id="start-hint"></p>
+      </div>
     </section>
   </div>
+
+  <section id="game-view" hidden>
+    <h2>Game <span id="game-view-id"></span></h2>
+    <div class="board-placeholder">Game board</div>
+    <h3>Players</h3>
+    <ul id="game-player-list"></ul>
+  </section>
 
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="index.js"></script>
