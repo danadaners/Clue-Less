@@ -34,6 +34,15 @@ const CHARACTER_NAMES = {
   professor_plum: "Professor Plum",
 };
 
+// Start game (host only) and the placeholder game screen
+const lobbyActions = $("lobby-actions");
+const startBtn = $("start-btn");
+const startHint = $("start-hint");
+const homeView = $("home-view");
+const nameField = document.querySelector(".name-field");
+const boards = document.querySelector(".boards");
+const gameView = $("game-view");
+
 let myPlayerId = null;
 
 function showError(message) {
@@ -100,6 +109,43 @@ function selectCharacter(characterId) {
     }
     console.log(`Client: selected ${CHARACTER_NAMES[res.characterId]}`);
   });
+}
+
+/** Only the host sees Start Game; it's enabled once the server says the lobby is ready. */
+function renderStartButton(players, canStart) {
+  const me = players.find((p) => p.id === myPlayerId);
+  if (!me?.isHost) {
+    lobbyActions.hidden = true;
+    return;
+  }
+  lobbyActions.hidden = false;
+  startBtn.disabled = !canStart;
+  startHint.textContent = canStart ? "" : "Waiting for 3-6 players to choose characters.";
+}
+
+startBtn.addEventListener("click", () => {
+  socket.emit(CLIENT.START_GAME, {}, (res) => {
+    if (!res || !res.ok) {
+      startHint.textContent = res?.error || "Could not start the game.";
+    }
+  });
+});
+
+/** Placeholder game screen: hides the home and lobby, shows the game view. */
+function showGameScreen(gameId, players) {
+  homeView.hidden = true;
+  nameField.hidden = true;
+  boards.hidden = true;
+  $("game-view-id").textContent = gameId;
+  const list = $("game-player-list");
+  list.replaceChildren();
+  for (const player of players) {
+    const li = document.createElement("li");
+    const you = player.id === myPlayerId ? " (you)" : "";
+    li.textContent = `${CHARACTER_NAMES[player.characterId]} - ${player.displayName}${you}`;
+    list.appendChild(li);
+  }
+  gameView.hidden = false;
 }
 
 // Create Game
@@ -171,10 +217,16 @@ socket.on("gameList", (games) => {
   }
 });
 
-socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players, availableCharacters }) => {
+socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players, availableCharacters, canStart }) => {
   showLobby(gameId);
   renderPlayers(players);
   renderCharacters(players, availableCharacters);
+  renderStartButton(players, canStart);
+});
+
+socket.on(PRIVATE.GAME_STARTED, ({ gameId, players }) => {
+  console.log(`Client: game ${gameId} started`);
+  showGameScreen(gameId, players);
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {
