@@ -150,6 +150,7 @@ io.on("connection", (socket) => {
 
     callback({ ok: true, characterId });
     console.log(`Server: ${game.players.get(playerId).displayName} selected ${characterId}`);
+
     sendPlayers(gameId);
   });
 });

@@ -34,6 +34,8 @@ const CHARACTER_NAMES = {
   professor_plum: "Professor Plum",
 };
 
+let myPlayerId = null;
+
 function showError(message) {
   homeError.textContent = message;
 }
@@ -114,6 +116,7 @@ createBtn.addEventListener("click", () => {
       return;
     }
 
+    myPlayerId = res.playerId;
     showLobby(res.gameId);
     console.log(`Client: Game ${res.gameId} created by ${res.displayName}`);
   });
@@ -141,6 +144,7 @@ joinSubmitBtn.addEventListener("click", () => {
       return;
     }
 
+    myPlayerId = res.playerId;
     showLobby(res.gameId);
     console.log(`Client: ${displayName} joined game ${res.gameId}`);
   });
