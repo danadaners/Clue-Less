@@ -8,6 +8,7 @@ import { admitPlayer } from "./session/admitPlayer.js";
 import { SUSPECT_IDS } from "./game/catalog.js";
 import { Lobby } from "./game/Lobby.js";
 import { beginPlay } from "./game/play.js";
+import { createDeck, createSolution, dealCards } from "./game/cards.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -45,17 +46,17 @@ function sendPlayers(gameId) {
     characterId: player.characterId ?? null,
     isHost: player.id === game.hostId,
   }));
+
   const taken = new Set(players.map((p) => p.characterId).filter(Boolean));
   const availableCharacters = SUSPECT_IDS.filter((c) => !taken.has(c));
   const canStart = game.lobby.canStart(players.length);
   io.to(gameId).emit(PUBLIC.LOBBY_UPDATE, { gameId, players, availableCharacters, canStart });
 }
 
-function sendMessageToPlayer(gameId, playerId, message)
-{
+function sendMessageToPlayer(gameId, playerId, message) {
   const game = games.get(gameId);
   const player = game.players.get(playerId);
-  player.socket.emit(PRIVATE.MESSAGE, {message});
+  player.socket.emit(PRIVATE.MESSAGE, { message });
 }
 
 io.on("connection", (socket) => {
@@ -134,7 +135,7 @@ io.on("connection", (socket) => {
     broadcastGameList();
   });
 
-    socket.on(CLIENT.SELECT_CHARACTER, ({ characterId } = {}, callback) => {
+  socket.on(CLIENT.SELECT_CHARACTER, ({ characterId } = {}, callback) => {
     const { gameId, playerId } = socket.data;
     const game = games.get(gameId);
     if (!game) {
@@ -179,26 +180,43 @@ io.on("connection", (socket) => {
       });
     }
 
-    const play = beginPlay(game);
+    let play;
+    try {
+      play = beginPlay(game);
+    } catch (err) {
+      return callback({ ok: false, code: err.code, error: err.message });
+    }
+
     game.started = true;
     callback({ ok: true });
     console.log(
       `Server: game ${gameId} started; activePlayer=${play.activePlayerId}`,
     );
 
-    const players = [...game.players.values()].map(({ id, displayName, characterId }) => ({
+    // Deal in turn order (set by beginPlay)
+    const players = game.turnOrder.map(({ playerId }) => game.players.get(playerId));
+    
+    const { solution, rest } = createSolution(createDeck());
+    game.solution = solution; // stays on the server, never sent to clients
+    dealCards(rest, players);
+
+    // Everyone sees how many cards each player has, but not which cards
+    const publicPlayers = players.map(({ id, displayName, characterId, hand }) => ({
       id,
       displayName,
       characterId,
+      cardCount: hand.length,
     }));
+
     // game_started is private (SRS B.4): later each player gets only their own hand
-    for (const player of game.players.values()) {
+    for (const player of players) {
       player.socket.emit(PRIVATE.GAME_STARTED, {
         gameId,
-        players,
+        players: publicPlayers,
         activePlayerId: play.activePlayerId,
         turnPhase: play.turnPhase,
         characterPositions: play.characterPositions,
+        hand: player.hand
       });
     }
     broadcastGameList();

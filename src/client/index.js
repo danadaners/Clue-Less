@@ -45,6 +45,16 @@ const gameView = $("game-view");
 
 let myPlayerId = null;
 
+
+function cardName(card) {
+  if (CHARACTER_NAMES[card.id]) return CHARACTER_NAMES[card.id];
+  return card.id
+    .split("_")
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+
 function showError(message) {
   homeError.textContent = message;
 }
@@ -148,6 +158,21 @@ function showGameScreen(gameId, players) {
   gameView.hidden = false;
 }
 
+/** Shows this player's own cards, grouped by category. */
+function renderHand(hand) {
+  const order = ["suspect", "weapon", "room"];
+  const sorted = [...hand].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
+  const list = $("hand-list");
+  list.replaceChildren();
+  for (const card of sorted) {
+    const li = document.createElement("li");
+    li.className = `card card--${card.category}`;
+    li.textContent = cardName(card);
+    li.title = card.category;
+    list.appendChild(li);
+  }
+}
+
 // Create Game
 createBtn.addEventListener("click", () => {
   const displayName = nameInput.value.trim();
@@ -227,6 +252,7 @@ socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players, availableCharacters, canStart
 socket.on(PRIVATE.GAME_STARTED, (payload) => {
   console.log(`Client: game ${payload.gameId} started`, payload);
   showGameScreen(payload.gameId, payload.players);
+  renderHand(payload.hand);
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {
