@@ -180,14 +180,21 @@ io.on("connection", (socket) => {
       });
     }
 
-    const play = beginPlay(game);
+    let play;
+    try {
+      play = beginPlay(game);
+    } catch (err) {
+      return callback({ ok: false, code: err.code, error: err.message });
+    }
+
     game.started = true;
     callback({ ok: true });
     console.log(
       `Server: game ${gameId} started; activePlayer=${play.activePlayerId}`,
     );
 
-    const players = [...game.players.values()];
+    // Deal in turn order (set by beginPlay)
+    const players = game.turnOrder.map(({ playerId }) => game.players.get(playerId));
     
     const { solution, rest } = createSolution(createDeck());
     game.solution = solution; // stays on the server, never sent to clients
@@ -205,13 +212,14 @@ io.on("connection", (socket) => {
     for (const player of players) {
       player.socket.emit(PRIVATE.GAME_STARTED, {
         gameId,
-        players,
+        players: publicPlayers,
         activePlayerId: play.activePlayerId,
         turnPhase: play.turnPhase,
         characterPositions: play.characterPositions,
         hand: player.hand
       });
     }
+    broadcastGameList();
   });
 });
 
