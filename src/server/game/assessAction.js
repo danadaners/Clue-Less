@@ -1,10 +1,10 @@
 /**
  * Game Logic action assessment (SRS Appendix B.6).
  *
- * Communication will call this with an authenticated actor, an event name,
- * and the request payload. This skeletal version checks that interface and
- * then refuses the action. It does not change game state. The Minimal
- * increment replaces the refusal with the real rules.
+ * Communication calls this with an authenticated actor, an event name, and
+ * the request payload. When a playable `game` (board + turns) is supplied,
+ * move_player and end_turn apply the Minimal rules. Other commands still
+ * validate then refuse until Dana lands those features.
  */
 
 import {
@@ -17,6 +17,8 @@ import {
   SERVER_OWNED_FIELDS,
   SKELETAL_STUB_MESSAGE,
 } from './catalog.js';
+import { endTurn, movePlayer } from './play.js';
+import { GAME_PHASE } from './turn.js';
 
 const NO_EFFECTS = Object.freeze([]);
 const GAME_COMMANDS = new Set(Object.values(COMMANDS));
@@ -24,11 +26,10 @@ const GAME_COMMANDS = new Set(Object.values(COMMANDS));
 /**
  * Receives one thing a player is trying to do: choose a character, start the
  * game, move, suggest, show a card, accuse, or end a turn. Lobby setup such
- * as creating a game is left for the other subsystems. A recognized action is
- * checked, then refused, so the board, hands, and turn do not change yet.
+ * as creating a game is left for the other subsystems.
  *
- * @param {{ actor: object, eventName: string, payload: object }} request
- * @returns {{ handled: false } | { handled: true, accepted: false, effects: readonly [], error: object }}
+ * @param {{ actor: object, eventName: string, payload: object, game?: object }} request
+ * @returns {{ handled: false } | { handled: true, accepted: boolean, effects: readonly unknown[], error?: object, result?: object }}
  */
 function assessAction(request) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) {
@@ -37,7 +38,7 @@ function assessAction(request) {
     );
   }
 
-  const { actor, eventName, payload } = request;
+  const { actor, eventName, payload, game } = request;
   if (!GAME_COMMANDS.has(eventName)) {
     return { handled: false };
   }
@@ -52,7 +53,64 @@ function assessAction(request) {
     return reject(payload, 'BAD_REQUEST', commandError);
   }
 
+  if (
+    game &&
+    game.phase === GAME_PHASE.IN_PROGRESS &&
+    game.board &&
+    (eventName === COMMANDS.MOVE_PLAYER || eventName === COMMANDS.END_TURN)
+  ) {
+    return applyPlayAction(game, actor, eventName, payload);
+  }
+
   return reject(payload, 'ACTION_NOT_ALLOWED', SKELETAL_STUB_MESSAGE);
+}
+
+/**
+ * Applies move_player or end_turn against an in-progress game.
+ */
+function applyPlayAction(game, actor, eventName, payload) {
+  const playerId = actor.playerId;
+  try {
+    if (eventName === COMMANDS.MOVE_PLAYER) {
+      const result = movePlayer(game, playerId, {
+        moveType: payload.moveType,
+        destinationId: payload.destinationId,
+      });
+      return {
+        handled: true,
+        accepted: true,
+        effects: [
+          {
+            kind: 'move',
+            characterId: game.turnOrder.find((p) => p.playerId === playerId)
+              ?.characterId,
+            toLocationId: payload.destinationId,
+            turnPhase: result.turnPhase,
+            activePlayerId: result.activePlayerId,
+            characterPositions: result.characterPositions,
+          },
+        ],
+        result,
+      };
+    }
+
+    const result = endTurn(game, playerId);
+    return {
+      handled: true,
+      accepted: true,
+      effects: [
+        {
+          kind: 'turn',
+          activePlayerId: result.activePlayerId,
+          turnPhase: result.turnPhase,
+        },
+      ],
+      result,
+    };
+  } catch (err) {
+    const code = err.code || 'ACTION_NOT_ALLOWED';
+    return reject(payload, code, err.message);
+  }
 }
 
 /**
