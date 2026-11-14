@@ -249,10 +249,10 @@ socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players, availableCharacters, canStart
   renderStartButton(players, canStart);
 });
 
-socket.on(PRIVATE.GAME_STARTED, ({ gameId, players, hand }) => {
-  console.log(`Client: game ${gameId} started.`);
-  showGameScreen(gameId, players);
-  renderHand(hand);
+socket.on(PRIVATE.GAME_STARTED, (payload) => {
+  console.log(`Client: game ${payload.gameId} started`, payload);
+  showGameScreen(payload.gameId, payload.players);
+  renderHand(payload.hand);
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {

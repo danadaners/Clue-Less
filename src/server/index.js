@@ -7,6 +7,7 @@ import { CLIENT, PRIVATE, PUBLIC, ERROR_CODES } from "../shared/messages.js";
 import { admitPlayer } from "./session/admitPlayer.js";
 import { SUSPECT_IDS } from "./game/catalog.js";
 import { Lobby } from "./game/Lobby.js";
+import { beginPlay } from "./game/play.js";
 import { createDeck, createSolution, dealCards } from "./game/cards.js";
 
 const PORT = process.env.PORT || 3000;
@@ -160,8 +161,8 @@ io.on("connection", (socket) => {
     sendPlayers(gameId);
   });
 
-  // Placeholder start: checks host + lobby, then moves everyone to the game screen.
-  // Board, cards, and turn order come in the Minimal increment.
+  // Host start: lobby checks, then place tokens and initialize turn order (5.3 / 5.7).
+  // Cards / suggestions / accusations still come from later Minimal work.
   socket.on(CLIENT.START_GAME, (_payload, callback) => {
     const { gameId, playerId } = socket.data;
     const game = games.get(gameId);
@@ -179,9 +180,12 @@ io.on("connection", (socket) => {
       });
     }
 
+    const play = beginPlay(game);
     game.started = true;
     callback({ ok: true });
-    console.log(`Server: game ${gameId} started`);
+    console.log(
+      `Server: game ${gameId} started; activePlayer=${play.activePlayerId}`,
+    );
 
     const players = [...game.players.values()];
     
@@ -201,11 +205,13 @@ io.on("connection", (socket) => {
     for (const player of players) {
       player.socket.emit(PRIVATE.GAME_STARTED, {
         gameId,
-        players: publicPlayers,
-        hand: player.hand,
+        players,
+        activePlayerId: play.activePlayerId,
+        turnPhase: play.turnPhase,
+        characterPositions: play.characterPositions,
+        hand: player.hand
       });
     }
-    broadcastGameList();
   });
 });
 
