@@ -224,9 +224,9 @@ socket.on(PUBLIC.LOBBY_UPDATE, ({ gameId, players, availableCharacters, canStart
   renderStartButton(players, canStart);
 });
 
-socket.on(PRIVATE.GAME_STARTED, ({ gameId, players }) => {
-  console.log(`Client: game ${gameId} started`);
-  showGameScreen(gameId, players);
+socket.on(PRIVATE.GAME_STARTED, (payload) => {
+  console.log(`Client: game ${payload.gameId} started`, payload);
+  showGameScreen(payload.gameId, payload.players);
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {
