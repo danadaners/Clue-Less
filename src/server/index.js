@@ -7,6 +7,7 @@ import { CLIENT, PRIVATE, PUBLIC, ERROR_CODES } from "../shared/messages.js";
 import { admitPlayer } from "./session/admitPlayer.js";
 import { SUSPECT_IDS } from "./game/catalog.js";
 import { Lobby } from "./game/Lobby.js";
+import { createDeck, createSolution, dealCards } from "./game/cards.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -44,17 +45,17 @@ function sendPlayers(gameId) {
     characterId: player.characterId ?? null,
     isHost: player.id === game.hostId,
   }));
+
   const taken = new Set(players.map((p) => p.characterId).filter(Boolean));
   const availableCharacters = SUSPECT_IDS.filter((c) => !taken.has(c));
   const canStart = game.lobby.canStart(players.length);
   io.to(gameId).emit(PUBLIC.LOBBY_UPDATE, { gameId, players, availableCharacters, canStart });
 }
 
-function sendMessageToPlayer(gameId, playerId, message)
-{
+function sendMessageToPlayer(gameId, playerId, message) {
   const game = games.get(gameId);
   const player = game.players.get(playerId);
-  player.socket.emit(PRIVATE.MESSAGE, {message});
+  player.socket.emit(PRIVATE.MESSAGE, { message });
 }
 
 io.on("connection", (socket) => {
@@ -133,7 +134,7 @@ io.on("connection", (socket) => {
     broadcastGameList();
   });
 
-    socket.on(CLIENT.SELECT_CHARACTER, ({ characterId } = {}, callback) => {
+  socket.on(CLIENT.SELECT_CHARACTER, ({ characterId } = {}, callback) => {
     const { gameId, playerId } = socket.data;
     const game = games.get(gameId);
     if (!game) {
@@ -182,14 +183,27 @@ io.on("connection", (socket) => {
     callback({ ok: true });
     console.log(`Server: game ${gameId} started`);
 
-    const players = [...game.players.values()].map(({ id, displayName, characterId }) => ({
+    const players = [...game.players.values()];
+    
+    const { solution, rest } = createSolution(createDeck());
+    game.solution = solution; // stays on the server, never sent to clients
+    dealCards(rest, players);
+
+    // Everyone sees how many cards each player has, but not which cards
+    const publicPlayers = players.map(({ id, displayName, characterId, hand }) => ({
       id,
       displayName,
       characterId,
+      cardCount: hand.length,
     }));
+
     // game_started is private (SRS B.4): later each player gets only their own hand
-    for (const player of game.players.values()) {
-      player.socket.emit(PRIVATE.GAME_STARTED, { gameId, players });
+    for (const player of players) {
+      player.socket.emit(PRIVATE.GAME_STARTED, {
+        gameId,
+        players: publicPlayers,
+        hand: player.hand,
+      });
     }
     broadcastGameList();
   });
