@@ -14,12 +14,15 @@ import {
 } from './board.js';
 import {
   beginPlay,
+  declareNoWinner,
+  declareWinner,
   endTurn,
   finishSuggestion,
+  listLegalMovesForPlayer,
   movePlayer,
   moveSuspectToRoom,
 } from './play.js';
-import { TURN_PHASE } from './turn.js';
+import { GAME_PHASE, TURN_PHASE } from './turn.js';
 
 const actor = { playerId: 'player-1', gameId: 'GAME' };
 
@@ -314,6 +317,43 @@ check('assessAction applies end_turn when a game is supplied', () => {
   });
   assert.equal(result.accepted, true);
   assert.equal(result.result.activePlayerId, 'p-mustard');
+});
+
+check('listLegalMovesForPlayer returns hallway exits for Scarlet', () => {
+  const game = sampleGame();
+  const moves = listLegalMovesForPlayer(game, 'p-scarlet');
+  assert.ok(moves.length >= 2);
+  assert.ok(moves.every((m) => m.moveType === 'adjacent'));
+  assert.ok(moves.some((m) => m.destinationId === roomLocationId('hall')));
+  assert.ok(moves.some((m) => m.destinationId === roomLocationId('lounge')));
+});
+
+check('endTurn is refused before a move', () => {
+  const game = sampleGame();
+  assert.throws(
+    () => endTurn(game, 'p-scarlet'),
+    (err) => err.code === 'ACTION_NOT_ALLOWED',
+  );
+});
+
+check('declareWinner and declareNoWinner end the game', () => {
+  const game = sampleGame();
+  game.solution = {
+    suspect: { id: 'miss_scarlet', category: 'suspect' },
+    weapon: { id: 'rope', category: 'weapon' },
+    room: { id: 'hall', category: 'room' },
+  };
+  const won = declareWinner(game, 'p-scarlet');
+  assert.equal(game.phase, GAME_PHASE.ENDED);
+  assert.equal(won.winnerPlayerId, 'p-scarlet');
+  assert.equal(won.solution.weaponId, 'rope');
+
+  const game2 = sampleGame();
+  game2.solution = game.solution;
+  const none = declareNoWinner(game2);
+  assert.equal(game2.phase, GAME_PHASE.ENDED);
+  assert.equal(none.reason, 'all_players_eliminated');
+  assert.equal(none.winnerPlayerId, undefined);
 });
 
 let failed = 0;

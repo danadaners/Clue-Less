@@ -207,6 +207,34 @@
       padding: 0;
       text-align: left;
     }
+
+    #turn-status {
+      margin: 12px 0 8px;
+      font-weight: 700;
+    }
+
+    #move-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin: 8px 0 16px;
+    }
+
+    #move-actions .btn {
+      max-width: none;
+    }
+
+    #game-action-error {
+      min-height: 1.2em;
+    }
+
+    #position-list {
+      list-style: none;
+      padding: 0;
+      text-align: left;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 
@@ -264,7 +292,16 @@
 
   <section id="game-view" hidden>
     <h2>Game <span id="game-view-id"></span></h2>
+    <p id="turn-status"></p>
     <div class="board-placeholder">Game board</div>
+    <div id="turn-actions" hidden>
+      <h3>Your move</h3>
+      <div id="move-actions"></div>
+      <button id="end-turn-btn" class="btn btn--primary" hidden>End Turn</button>
+      <p id="game-action-error" class="error" role="alert"></p>
+    </div>
+    <h3>Token positions</h3>
+    <ul id="position-list"></ul>
     <h3>Your Cards</h3>
     <ul id="hand-list"></ul>
     <h3>Players</h3>

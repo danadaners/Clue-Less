@@ -7,8 +7,15 @@ import { CLIENT, PRIVATE, PUBLIC, ERROR_CODES } from "../shared/messages.js";
 import { admitPlayer } from "./session/admitPlayer.js";
 import { SUSPECT_IDS } from "./game/catalog.js";
 import { Lobby } from "./game/Lobby.js";
-import { beginPlay } from "./game/play.js";
+import {
+  beginPlay,
+  endTurn,
+  listLegalMovesForPlayer,
+  movePlayer,
+  getActivePlayerId,
+} from "./game/play.js";
 import { createDeck, createSolution, dealCards } from "./game/cards.js";
+import { GAME_PHASE, TURN_PHASE } from "./game/turn.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -57,6 +64,47 @@ function sendMessageToPlayer(gameId, playerId, message) {
   const game = games.get(gameId);
   const player = game.players.get(playerId);
   player.socket.emit(PRIVATE.MESSAGE, { message });
+}
+
+/** Public in-progress snapshot for game_state_update. */
+function publicGameState(gameId, game) {
+  return {
+    gameId,
+    activePlayerId: getActivePlayerId(game),
+    turnPhase: game.turnPhase,
+    stateVersion: game.stateVersion ?? 0,
+    characterPositions: game.board.getCharacterPositions(),
+    phase: game.phase,
+  };
+}
+
+function broadcastGameState(gameId, extra = {}) {
+  const game = games.get(gameId);
+  if (!game?.board) {
+    return;
+  }
+  const state = { ...publicGameState(gameId, game), ...extra };
+  io.to(gameId).emit(PUBLIC.GAME_STATE_UPDATE, state);
+
+  // Active player also gets their current legal moves privately.
+  if (game.phase === GAME_PHASE.IN_PROGRESS && state.activePlayerId) {
+    const active = game.players.get(state.activePlayerId);
+    if (active?.socket) {
+      active.socket.emit(PRIVATE.PLAYER_VIEW_UPDATE, {
+        gameId,
+        activePlayerId: state.activePlayerId,
+        turnPhase: state.turnPhase,
+        stateVersion: state.stateVersion,
+        legalMoves:
+          state.turnPhase === TURN_PHASE.AWAITING_MOVE
+            ? listLegalMovesForPlayer(game, state.activePlayerId)
+            : [],
+        canEndTurn:
+          state.turnPhase === TURN_PHASE.TURN_COMPLETE ||
+          state.turnPhase === TURN_PHASE.AWAITING_SUGGESTION,
+      });
+    }
+  }
 }
 
 io.on("connection", (socket) => {
@@ -208,7 +256,7 @@ io.on("connection", (socket) => {
       cardCount: hand.length,
     }));
 
-    // game_started is private (SRS B.4): later each player gets only their own hand
+    // game_started is private (SRS B.4): each player gets only their own hand
     for (const player of players) {
       player.socket.emit(PRIVATE.GAME_STARTED, {
         gameId,
@@ -216,10 +264,70 @@ io.on("connection", (socket) => {
         activePlayerId: play.activePlayerId,
         turnPhase: play.turnPhase,
         characterPositions: play.characterPositions,
-        hand: player.hand
+        stateVersion: game.stateVersion ?? 0,
+        hand: player.hand,
       });
     }
+    broadcastGameState(gameId);
     broadcastGameList();
+  });
+
+  socket.on(CLIENT.MOVE_PLAYER, (payload = {}, callback) => {
+    const { gameId, playerId } = socket.data;
+    const game = games.get(gameId);
+    if (!game?.started || !game.board) {
+      return callback?.({ ok: false, error: "Game is not in progress." });
+    }
+
+    try {
+      const result = movePlayer(game, playerId, {
+        moveType: payload.moveType,
+        destinationId: payload.destinationId,
+      });
+      callback?.({ ok: true, ...result });
+      console.log(
+        `Server: ${game.players.get(playerId).displayName} moved (${payload.moveType})`,
+      );
+      broadcastGameState(gameId, {
+        lastAction: {
+          kind: "move",
+          playerId,
+          moveType: payload.moveType,
+          destinationId: payload.destinationId,
+        },
+      });
+    } catch (err) {
+      return callback?.({
+        ok: false,
+        code: err.code || ERROR_CODES.ACTION_NOT_ALLOWED,
+        error: err.message,
+      });
+    }
+  });
+
+  socket.on(CLIENT.END_TURN, (_payload, callback) => {
+    const { gameId, playerId } = socket.data;
+    const game = games.get(gameId);
+    if (!game?.started || !game.board) {
+      return callback?.({ ok: false, error: "Game is not in progress." });
+    }
+
+    try {
+      const result = endTurn(game, playerId);
+      callback?.({ ok: true, ...result });
+      console.log(
+        `Server: ${game.players.get(playerId).displayName} ended turn; active=${result.activePlayerId}`,
+      );
+      broadcastGameState(gameId, {
+        lastAction: { kind: "turn", playerId, activePlayerId: result.activePlayerId },
+      });
+    } catch (err) {
+      return callback?.({
+        ok: false,
+        code: err.code || ERROR_CODES.ACTION_NOT_ALLOWED,
+        error: err.message,
+      });
+    }
   });
 });
 

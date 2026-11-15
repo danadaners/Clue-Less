@@ -252,6 +252,52 @@ export class Board {
   }
 
   /**
+   * Legal adjacent / secret_passage options from the token's current square.
+   * Does not include stay (caller decides that from suggestion-moved state).
+   *
+   * @param {string} characterId
+   * @returns {{ moveType: string, destinationId: string }[]}
+   */
+  listLegalMoves(characterId) {
+    const fromId = this.tokenLocations.get(characterId);
+    if (!fromId) {
+      return [];
+    }
+    const from = this.locations.get(fromId);
+    if (!from) {
+      return [];
+    }
+
+    /** @type {{ moveType: string, destinationId: string }[]} */
+    const moves = [];
+
+    if (from.kind === 'hallway') {
+      for (const to of from.adjacent) {
+        if (this.isLegalMove(characterId, 'adjacent', to.id)) {
+          moves.push({ moveType: 'adjacent', destinationId: to.id });
+        }
+      }
+      return moves;
+    }
+
+    for (const to of from.adjacent) {
+      if (this.isLegalMove(characterId, 'adjacent', to.id)) {
+        moves.push({ moveType: 'adjacent', destinationId: to.id });
+      }
+    }
+    if (
+      from.secretPassage &&
+      this.isLegalMove(characterId, 'secret_passage', from.secretPassage.id)
+    ) {
+      moves.push({
+        moveType: 'secret_passage',
+        destinationId: from.secretPassage.id,
+      });
+    }
+    return moves;
+  }
+
+  /**
    * True when the named location is a room.
    * @param {string} locationId
    */
