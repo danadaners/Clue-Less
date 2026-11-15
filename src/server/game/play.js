@@ -143,12 +143,23 @@ export function movePlayer(game, playerId, { moveType, destinationId } = {}) {
 
 /**
  * Ends the active player's turn and skips eliminated players.
+ * Allowed after a move finishes (hallway → turn_complete, or room →
+ * awaiting_suggestion until suggestion/accusation exist).
  *
  * @param {object} game
  * @param {string} playerId
  */
 export function endTurn(game, playerId) {
   requireInProgress(game);
+  if (
+    game.turnPhase !== TURN_PHASE.TURN_COMPLETE &&
+    game.turnPhase !== TURN_PHASE.AWAITING_SUGGESTION
+  ) {
+    throw new GameError(
+      ERROR_CODES.ACTION_NOT_ALLOWED,
+      'End turn is only allowed after you have moved.',
+    );
+  }
   try {
     const result = advanceTurn(game, playerId);
     game.stateVersion = (game.stateVersion ?? 0) + 1;
@@ -157,6 +168,28 @@ export function endTurn(game, playerId) {
     const code = err.code || ERROR_CODES.ACTION_NOT_ALLOWED;
     throw new GameError(code, err.message);
   }
+}
+
+/**
+ * Legal moves for the active player (for the client move UI).
+ *
+ * @param {object} game
+ * @param {string} playerId
+ */
+export function listLegalMovesForPlayer(game, playerId) {
+  requireInProgress(game);
+  const characterId = characterIdForPlayer(game, playerId);
+  if (!characterId) {
+    return [];
+  }
+  const moves = game.board.listLegalMoves(characterId);
+  if (
+    game.suggestionMovedPlayerId === playerId &&
+    game.board.isLegalMove(characterId, 'stay', undefined)
+  ) {
+    moves.push({ moveType: 'stay' });
+  }
+  return moves;
 }
 
 /**
@@ -203,6 +236,64 @@ export function finishSuggestion(game) {
   return {
     turnPhase: game.turnPhase,
     activePlayerId: getActivePlayerId(game),
+  };
+}
+
+/**
+ * Ends the game with a winner (correct accusation). Call from accusation flow.
+ *
+ * @param {object} game
+ * @param {string} playerId
+ */
+export function declareWinner(game, playerId) {
+  if (!game) {
+    throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, 'Game is missing.');
+  }
+  game.phase = GAME_PHASE.ENDED;
+  game.winnerPlayerId = playerId;
+  game.endReason = 'accusation_correct';
+  game.pendingSuggestion = null;
+  game.stateVersion = (game.stateVersion ?? 0) + 1;
+  return {
+    winnerPlayerId: playerId,
+    solution: publicSolution(game.solution),
+    stateVersion: game.stateVersion,
+  };
+}
+
+/**
+ * Ends the game with no winner (e.g. every player eliminated).
+ *
+ * @param {object} game
+ * @param {string} [reason]
+ */
+export function declareNoWinner(game, reason = 'all_players_eliminated') {
+  if (!game) {
+    throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, 'Game is missing.');
+  }
+  game.phase = GAME_PHASE.ENDED;
+  game.winnerPlayerId = null;
+  game.endReason = reason;
+  game.pendingSuggestion = null;
+  game.stateVersion = (game.stateVersion ?? 0) + 1;
+  return {
+    reason,
+    solution: publicSolution(game.solution),
+    stateVersion: game.stateVersion,
+  };
+}
+
+/**
+ * @param {object | undefined} solution
+ */
+function publicSolution(solution) {
+  if (!solution) {
+    return null;
+  }
+  return {
+    suspectId: solution.suspect?.id ?? solution.suspectId ?? null,
+    weaponId: solution.weapon?.id ?? solution.weaponId ?? null,
+    roomId: solution.room?.id ?? solution.roomId ?? null,
   };
 }
 

@@ -42,8 +42,18 @@ const homeView = $("home-view");
 const nameField = document.querySelector(".name-field");
 const boards = document.querySelector(".boards");
 const gameView = $("game-view");
+const turnStatus = $("turn-status");
+const turnActions = $("turn-actions");
+const moveActions = $("move-actions");
+const endTurnBtn = $("end-turn-btn");
+const gameActionError = $("game-action-error");
+const positionList = $("position-list");
 
 let myPlayerId = null;
+let gamePlayers = [];
+let activePlayerId = null;
+let turnPhase = null;
+let stateVersion = 0;
 
 
 function cardName(card) {
@@ -147,15 +157,134 @@ function showGameScreen(gameId, players) {
   nameField.hidden = true;
   boards.hidden = true;
   $("game-view-id").textContent = gameId;
+  gamePlayers = players;
+  renderGamePlayers(players);
+  gameView.hidden = false;
+}
+
+function renderGamePlayers(players) {
   const list = $("game-player-list");
   list.replaceChildren();
   for (const player of players) {
     const li = document.createElement("li");
     const you = player.id === myPlayerId ? " (you)" : "";
-    li.textContent = `${CHARACTER_NAMES[player.characterId]} - ${player.displayName}${you}`;
+    const active = player.id === activePlayerId ? " — active" : "";
+    li.textContent = `${CHARACTER_NAMES[player.characterId]} - ${player.displayName}${you}${active}`;
     list.appendChild(li);
   }
-  gameView.hidden = false;
+}
+
+function locationLabel(locationId) {
+  if (!locationId) return "(unknown)";
+  if (locationId.startsWith("room:")) {
+    const id = locationId.slice(5);
+    return id.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+  }
+  if (locationId.startsWith("hallway:")) {
+    const parts = locationId.split(":");
+    const a = parts[1].split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+    const b = parts[2].split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+    return `Hallway (${a}–${b})`;
+  }
+  return locationId;
+}
+
+function renderPositions(characterPositions) {
+  positionList.replaceChildren();
+  for (const { characterId, locationId } of characterPositions || []) {
+    const li = document.createElement("li");
+    li.textContent = `${CHARACTER_NAMES[characterId] || characterId}: ${locationLabel(locationId)}`;
+    positionList.appendChild(li);
+  }
+}
+
+function playerLabel(playerId) {
+  const player = gamePlayers.find((p) => p.id === playerId);
+  if (!player) return "another player";
+  return CHARACTER_NAMES[player.characterId] || player.displayName;
+}
+
+function renderTurnStatus() {
+  if (!activePlayerId) {
+    turnStatus.textContent = "";
+    return;
+  }
+  const mine = activePlayerId === myPlayerId;
+  const who = mine ? "Your turn" : `${playerLabel(activePlayerId)}'s turn`;
+  turnStatus.textContent = `${who} (${turnPhase || "—"})`;
+}
+
+function clearMoveUi() {
+  moveActions.replaceChildren();
+  endTurnBtn.hidden = true;
+  turnActions.hidden = true;
+  gameActionError.textContent = "";
+}
+
+function renderMoveUi({ legalMoves = [], canEndTurn = false } = {}) {
+  const mine = activePlayerId === myPlayerId;
+  if (!mine) {
+    clearMoveUi();
+    return;
+  }
+
+  turnActions.hidden = false;
+  gameActionError.textContent = "";
+  moveActions.replaceChildren();
+
+  for (const move of legalMoves) {
+    const button = document.createElement("button");
+    button.className = "btn";
+    if (move.moveType === "stay") {
+      button.textContent = "Stay in room";
+    } else if (move.moveType === "secret_passage") {
+      button.textContent = `Secret passage → ${locationLabel(move.destinationId)}`;
+    } else {
+      button.textContent = `Move to ${locationLabel(move.destinationId)}`;
+    }
+    button.addEventListener("click", () => sendMove(move));
+    moveActions.appendChild(button);
+  }
+
+  endTurnBtn.hidden = !canEndTurn;
+}
+
+function sendMove(move) {
+  gameActionError.textContent = "";
+  const payload = {
+    moveType: move.moveType,
+    expectedVersion: stateVersion,
+  };
+  if (move.destinationId) {
+    payload.destinationId = move.destinationId;
+  }
+  socket.emit(CLIENT.MOVE_PLAYER, payload, (res) => {
+    if (!res || !res.ok) {
+      gameActionError.textContent = res?.error || "Could not move.";
+      return;
+    }
+    console.log("Client: move accepted", res);
+  });
+}
+
+endTurnBtn.addEventListener("click", () => {
+  gameActionError.textContent = "";
+  socket.emit(CLIENT.END_TURN, { expectedVersion: stateVersion }, (res) => {
+    if (!res || !res.ok) {
+      gameActionError.textContent = res?.error || "Could not end turn.";
+      return;
+    }
+    console.log("Client: end turn accepted", res);
+  });
+});
+
+function applyPublicState(payload) {
+  if (payload.activePlayerId !== undefined) activePlayerId = payload.activePlayerId;
+  if (payload.turnPhase !== undefined) turnPhase = payload.turnPhase;
+  if (payload.stateVersion !== undefined) stateVersion = payload.stateVersion;
+  if (payload.characterPositions) renderPositions(payload.characterPositions);
+  renderTurnStatus();
+  renderGamePlayers(gamePlayers);
 }
 
 /** Shows this player's own cards, grouped by category. */
@@ -253,6 +382,25 @@ socket.on(PRIVATE.GAME_STARTED, (payload) => {
   console.log(`Client: game ${payload.gameId} started`, payload);
   showGameScreen(payload.gameId, payload.players);
   renderHand(payload.hand);
+  applyPublicState(payload);
+  clearMoveUi();
+});
+
+socket.on(PUBLIC.GAME_STATE_UPDATE, (payload) => {
+  console.log("Client: game_state_update", payload);
+  applyPublicState(payload);
+  if (payload.activePlayerId !== myPlayerId) {
+    clearMoveUi();
+  }
+});
+
+socket.on(PRIVATE.PLAYER_VIEW_UPDATE, (payload) => {
+  console.log("Client: player_view_update", payload);
+  applyPublicState(payload);
+  renderMoveUi({
+    legalMoves: payload.legalMoves || [],
+    canEndTurn: Boolean(payload.canEndTurn),
+  });
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {
