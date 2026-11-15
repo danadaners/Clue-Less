@@ -75,7 +75,7 @@ export function isPlayersTurn(game, playerId) {
 
 /**
  * Advances to the next non-eliminated player in turnOrder.
- * @param {{ turnOrder: { playerId: string, eliminated?: boolean }[], currentTurn: number, turnPhase?: string, suggestionMovedPlayerId?: string | null, pendingSuggestion?: unknown }} game
+ * @param {{ turnOrder: { playerId: string, eliminated?: boolean }[], currentTurn: number, turnPhase?: string, pendingSuggestion?: unknown }} game
  * @param {string} playerId
  * @returns {{ activePlayerId: string, turnPhase: string }}
  */
@@ -101,7 +101,6 @@ export function endTurn(game, playerId) {
     if (!game.turnOrder[next].eliminated) {
       game.currentTurn = next;
       game.turnPhase = TURN_PHASE.AWAITING_MOVE;
-      game.suggestionMovedPlayerId = null;
       return {
         activePlayerId: game.turnOrder[next].playerId,
         turnPhase: game.turnPhase,
@@ -137,7 +136,6 @@ export function markEliminated(game, playerId) {
       if (!game.turnOrder[next].eliminated) {
         game.currentTurn = next;
         game.turnPhase = TURN_PHASE.AWAITING_MOVE;
-        game.suggestionMovedPlayerId = null;
         return {
           activePlayerId: game.turnOrder[next].playerId,
           turnPhase: game.turnPhase,

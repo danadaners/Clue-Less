@@ -14,12 +14,16 @@ import {
 } from './board.js';
 import {
   beginPlay,
+  canEndTurn,
+  declareNoWinner,
+  declareWinner,
   endTurn,
   finishSuggestion,
+  listLegalMovesForPlayer,
   movePlayer,
   moveSuspectToRoom,
 } from './play.js';
-import { TURN_PHASE } from './turn.js';
+import { GAME_PHASE, TURN_PHASE } from './turn.js';
 
 const actor = { playerId: 'player-1', gameId: 'GAME' };
 
@@ -281,11 +285,46 @@ check('moveSuspectToRoom and finishSuggestion update phase', () => {
   const moved = moveSuspectToRoom(game, 'professor_plum', 'lounge');
   assert.equal(moved.destinationId, roomLocationId('lounge'));
   assert.equal(game.board.getTokenLocation('professor_plum'), roomLocationId('lounge'));
-  assert.equal(game.suggestionMovedPlayerId, 'p-plum');
+  assert.equal(game.players.get('p-plum').movedBySuggestion, true);
 
   const finished = finishSuggestion(game);
   assert.equal(game.pendingSuggestion, null);
   assert.equal(finished.turnPhase, TURN_PHASE.TURN_COMPLETE);
+});
+
+check('a player moved by a suggestion may stay on their next turn', () => {
+  const game = sampleGame();
+  movePlayer(game, 'p-scarlet', {
+    moveType: 'adjacent',
+    destinationId: roomLocationId('lounge'),
+  });
+  moveSuspectToRoom(game, 'colonel_mustard', 'lounge');
+  finishSuggestion(game);
+  endTurn(game, 'p-scarlet'); // next is Mustard
+  const moves = listLegalMovesForPlayer(game, 'p-mustard');
+  assert.ok(moves.some((m) => m.moveType === 'stay'));
+  movePlayer(game, 'p-mustard', { moveType: 'stay' });
+  assert.equal(game.turnPhase, TURN_PHASE.AWAITING_SUGGESTION);
+  assert.equal(game.players.get('p-mustard').movedBySuggestion, false);
+});
+
+check('a blocked player can end their turn without moving', () => {
+  const game = sampleGame();
+  game.board.updatePosition('miss_scarlet', roomLocationId('ballroom'));
+  // Ballroom's three hallways are all occupied
+  game.board.updatePosition('colonel_mustard', hallwayId('ballroom', 'billiard_room'));
+  assert.equal(game.board.getTokenLocation('mrs_white'), hallwayId('ballroom', 'kitchen'));
+  assert.equal(game.board.getTokenLocation('mr_green'), hallwayId('ballroom', 'conservatory'));
+  assert.deepEqual(listLegalMovesForPlayer(game, 'p-scarlet'), []);
+  assert.equal(canEndTurn(game, 'p-scarlet'), true);
+  const result = endTurn(game, 'p-scarlet');
+  assert.notEqual(result.activePlayerId, 'p-scarlet');
+});
+
+check('a player who can move cannot skip their move', () => {
+  const game = sampleGame();
+  assert.equal(canEndTurn(game, 'p-scarlet'), false);
+  assert.throws(() => endTurn(game, 'p-scarlet'));
 });
 
 check('assessAction applies move_player when a game is supplied', () => {
@@ -314,6 +353,43 @@ check('assessAction applies end_turn when a game is supplied', () => {
   });
   assert.equal(result.accepted, true);
   assert.equal(result.result.activePlayerId, 'p-mustard');
+});
+
+check('listLegalMovesForPlayer returns hallway exits for Scarlet', () => {
+  const game = sampleGame();
+  const moves = listLegalMovesForPlayer(game, 'p-scarlet');
+  assert.ok(moves.length >= 2);
+  assert.ok(moves.every((m) => m.moveType === 'adjacent'));
+  assert.ok(moves.some((m) => m.destinationId === roomLocationId('hall')));
+  assert.ok(moves.some((m) => m.destinationId === roomLocationId('lounge')));
+});
+
+check('endTurn is refused before a move', () => {
+  const game = sampleGame();
+  assert.throws(
+    () => endTurn(game, 'p-scarlet'),
+    (err) => err.code === 'ACTION_NOT_ALLOWED',
+  );
+});
+
+check('declareWinner and declareNoWinner end the game', () => {
+  const game = sampleGame();
+  game.solution = {
+    suspect: { id: 'miss_scarlet', category: 'suspect' },
+    weapon: { id: 'rope', category: 'weapon' },
+    room: { id: 'hall', category: 'room' },
+  };
+  const won = declareWinner(game, 'p-scarlet');
+  assert.equal(game.phase, GAME_PHASE.ENDED);
+  assert.equal(won.winnerPlayerId, 'p-scarlet');
+  assert.equal(won.solution.weaponId, 'rope');
+
+  const game2 = sampleGame();
+  game2.solution = game.solution;
+  const none = declareNoWinner(game2);
+  assert.equal(game2.phase, GAME_PHASE.ENDED);
+  assert.equal(none.reason, 'all_players_eliminated');
+  assert.equal(none.winnerPlayerId, undefined);
 });
 
 let failed = 0;
