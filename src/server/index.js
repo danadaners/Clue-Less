@@ -9,6 +9,7 @@ import { SUSPECT_IDS } from "./game/catalog.js";
 import { Lobby } from "./game/Lobby.js";
 import {
   beginPlay,
+  canEndTurn,
   endTurn,
   listLegalMovesForPlayer,
   movePlayer,
@@ -16,6 +17,7 @@ import {
 } from "./game/play.js";
 import { createDeck, createSolution, dealCards } from "./game/cards.js";
 import { GAME_PHASE, TURN_PHASE } from "./game/turn.js";
+import { makeSuggestion, submitDisproval, makeAccusation } from "./game/suggestion.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -75,7 +77,32 @@ function publicGameState(gameId, game) {
     stateVersion: game.stateVersion ?? 0,
     characterPositions: game.board.getCharacterPositions(),
     phase: game.phase,
+    eliminatedPlayerIds: game.turnOrder.filter((e) => e.eliminated).map((e) => e.playerId),
   };
+}
+
+/** Private event to one player in a game. */
+function sendTo(game, playerId, event, payload) {
+  game.players.get(playerId)?.socket?.emit(event, payload);
+}
+
+/**
+ * Runs a Game Logic call for this socket's in-progress game.
+ * Rule errors go back to the sender instead of crashing the server.
+ */
+function withGame(socket, callback, fn) {
+  const reply = typeof callback === "function" ? callback : () => {};
+  const { gameId, playerId } = socket.data;
+  const game = games.get(gameId);
+  if (!game?.started || !game.board) {
+    return reply({ ok: false, code: ERROR_CODES.ACTION_NOT_ALLOWED, error: "Game is not in progress." });
+  }
+  try {
+    fn(game, gameId, playerId, reply);
+  } catch (err) {
+    if (!err.code) console.error(err); // a bug, not a rule violation
+    reply({ ok: false, code: err.code ?? ERROR_CODES.ACTION_NOT_ALLOWED, error: err.message });
+  }
 }
 
 function broadcastGameState(gameId, extra = {}) {
@@ -99,9 +126,8 @@ function broadcastGameState(gameId, extra = {}) {
           state.turnPhase === TURN_PHASE.AWAITING_MOVE
             ? listLegalMovesForPlayer(game, state.activePlayerId)
             : [],
-        canEndTurn:
-          state.turnPhase === TURN_PHASE.TURN_COMPLETE ||
-          state.turnPhase === TURN_PHASE.AWAITING_SUGGESTION,
+        // after moving, or when blocked with no legal move (loses the move)
+        canEndTurn: canEndTurn(game, state.activePlayerId),
       });
     }
   }
@@ -209,8 +235,7 @@ io.on("connection", (socket) => {
     sendPlayers(gameId);
   });
 
-  // Host start: lobby checks, then place tokens and initialize turn order (5.3 / 5.7).
-  // Cards / suggestions / accusations still come from later Minimal work.
+  // Host start: lobby checks, board + turn order (beginPlay), then deal cards.
   socket.on(CLIENT.START_GAME, (_payload, callback) => {
     const { gameId, playerId } = socket.data;
     const game = games.get(gameId);
@@ -328,6 +353,60 @@ io.on("connection", (socket) => {
         error: err.message,
       });
     }
+  });
+
+  // UC-06: suggestion. Everyone sees what was suggested; only the asked player
+  // learns which of their cards match.
+  socket.on(CLIENT.MAKE_SUGGESTION, (payload, callback) => {
+    withGame(socket, callback, (game, gameId, playerId, reply) => {
+      console.log(`Communication: calling makeSuggestion for ${playerId} in game ${gameId}`);
+      const { suggestion, disprover, matchingCardIds } = makeSuggestion(game, playerId, payload);
+      reply({ ok: true });
+
+      broadcastGameState(gameId, {
+        lastAction: { kind: "suggestion", ...suggestion, askedPlayerId: disprover?.id ?? null },
+      });
+      if (disprover) {
+        sendTo(game, disprover.id, PRIVATE.DISPROVAL_REQUEST, { ...suggestion, matchingCardIds });
+      } else {
+        io.to(gameId).emit(PUBLIC.DISPROVAL_PUBLIC, { suggesterId: playerId, disproverId: null });
+      }
+    });
+  });
+
+  // UC-07/08: the asked player shows one card, privately, to the suggester.
+  socket.on(CLIENT.SUBMIT_DISPROVAL, (payload, callback) => {
+    withGame(socket, callback, (game, gameId, playerId, reply) => {
+      console.log(`Communication: calling submitDisproval for ${playerId} in game ${gameId}`);
+      const { suggestion, disproverId, card } = submitDisproval(game, playerId, payload);
+      reply({ ok: true });
+
+      sendTo(game, suggestion.suggesterId, PRIVATE.DISPROVAL_RESULT, { disproverId, card });
+      // everyone sees who disproved, not which card
+      io.to(gameId).emit(PUBLIC.DISPROVAL_PUBLIC, { suggesterId: suggestion.suggesterId, disproverId });
+      broadcastGameState(gameId);
+    });
+  });
+
+  // UC-09: accusation. Correct wins; wrong eliminates the player.
+  socket.on(CLIENT.MAKE_ACCUSATION, (payload, callback) => {
+    withGame(socket, callback, (game, gameId, playerId, reply) => {
+      console.log(`Communication: calling makeAccusation for ${playerId} in game ${gameId}`);
+      const result = makeAccusation(game, playerId, payload);
+      reply({ ok: true, correct: result.correct });
+
+      if (result.correct) {
+        io.to(gameId).emit(PUBLIC.GAME_WON, { winnerId: playerId, solution: result.solution });
+        return;
+      }
+      const { suspectId, weaponId, roomId } = payload;
+      io.to(gameId).emit(PUBLIC.ACCUSATION_RESULT, { playerId, correct: false, suspectId, weaponId, roomId });
+      if (result.everyoneEliminated) {
+        io.to(gameId).emit(PUBLIC.GAME_ENDED_NO_WINNER, { solution: result.solution });
+      } else {
+        broadcastGameState(gameId, { lastAction: { kind: "accusation", playerId, correct: false } });
+      }
+    });
   });
 });
 

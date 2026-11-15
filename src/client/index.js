@@ -49,11 +49,25 @@ const endTurnBtn = $("end-turn-btn");
 const gameActionError = $("game-action-error");
 const positionList = $("position-list");
 
+// Accusation and game over
+const accusePanel = $("accuse-panel");
+const accuseBtn = $("accuse-btn");
+const gameResult = $("game-result");
+const eliminationNote = $("elimination-note");
+
+const WEAPON_IDS = ["knife", "candlestick", "revolver", "rope", "lead_pipe", "wrench"];
+const ROOM_IDS = [
+  "study", "hall", "lounge", "library", "billiard_room",
+  "dining_room", "conservatory", "ballroom", "kitchen",
+];
+
 let myPlayerId = null;
 let gamePlayers = [];
 let activePlayerId = null;
 let turnPhase = null;
 let stateVersion = 0;
+let eliminatedPlayerIds = [];
+let gameOver = false;
 
 
 function cardName(card) {
@@ -168,8 +182,9 @@ function renderGamePlayers(players) {
   for (const player of players) {
     const li = document.createElement("li");
     const you = player.id === myPlayerId ? " (you)" : "";
-    const active = player.id === activePlayerId ? " — active" : "";
-    li.textContent = `${CHARACTER_NAMES[player.characterId]} - ${player.displayName}${you}${active}`;
+    const active = !gameOver && player.id === activePlayerId ? " — active" : "";
+    const out = eliminatedPlayerIds.includes(player.id) ? " (eliminated)" : "";
+    li.textContent = `${CHARACTER_NAMES[player.characterId]} - ${player.displayName}${you}${active}${out}`;
     list.appendChild(li);
   }
 }
@@ -205,7 +220,7 @@ function playerLabel(playerId) {
 }
 
 function renderTurnStatus() {
-  if (!activePlayerId) {
+  if (gameOver || !activePlayerId) {
     turnStatus.textContent = "";
     return;
   }
@@ -217,13 +232,14 @@ function renderTurnStatus() {
 function clearMoveUi() {
   moveActions.replaceChildren();
   endTurnBtn.hidden = true;
+  accusePanel.hidden = true;
   turnActions.hidden = true;
   gameActionError.textContent = "";
 }
 
 function renderMoveUi({ legalMoves = [], canEndTurn = false } = {}) {
   const mine = activePlayerId === myPlayerId;
-  if (!mine) {
+  if (!mine || gameOver) {
     clearMoveUi();
     return;
   }
@@ -247,6 +263,50 @@ function renderMoveUi({ legalMoves = [], canEndTurn = false } = {}) {
   }
 
   endTurnBtn.hidden = !canEndTurn;
+  // You can accuse any time on your turn, except while waiting for a disproval
+  accusePanel.hidden = turnPhase === "awaiting_disproval";
+}
+
+function fillSelect(select, ids, label) {
+  select.replaceChildren(new Option(`${label}…`, ""));
+  for (const id of ids) select.appendChild(new Option(cardName({ id }), id));
+}
+fillSelect($("accuse-suspect"), Object.keys(CHARACTER_NAMES), "Suspect");
+fillSelect($("accuse-weapon"), WEAPON_IDS, "Weapon");
+fillSelect($("accuse-room"), ROOM_IDS, "Room");
+
+accuseBtn.addEventListener("click", () => {
+  const suspectId = $("accuse-suspect").value;
+  const weaponId = $("accuse-weapon").value;
+  const roomId = $("accuse-room").value;
+  if (!suspectId || !weaponId || !roomId) {
+    gameActionError.textContent = "Choose a suspect, a weapon, and a room.";
+    return;
+  }
+  gameActionError.textContent = "";
+  socket.emit(CLIENT.MAKE_ACCUSATION, { suspectId, weaponId, roomId }, (res) => {
+    if (!res || !res.ok) {
+      gameActionError.textContent = res?.error || "Could not make the accusation.";
+    }
+  });
+});
+
+/** "Mr. Green with the Rope in the Kitchen" */
+function describeSolution({ suspectId, weaponId, roomId }) {
+  return `${cardName({ id: suspectId })} with the ${cardName({ id: weaponId })} in the ${cardName({ id: roomId })}`;
+}
+
+/** Ends the game on screen: shows the result and removes every turn control. */
+function showGameOver({ title, detail, win = false }) {
+  gameOver = true;
+  clearMoveUi();
+  eliminationNote.hidden = true;
+  turnStatus.textContent = "";
+  $("result-title").textContent = title;
+  $("result-detail").textContent = detail;
+  gameResult.classList.toggle("game-result--win", win);
+  gameResult.hidden = false;
+  renderGamePlayers(gamePlayers);
 }
 
 function sendMove(move) {
@@ -283,6 +343,7 @@ function applyPublicState(payload) {
   if (payload.turnPhase !== undefined) turnPhase = payload.turnPhase;
   if (payload.stateVersion !== undefined) stateVersion = payload.stateVersion;
   if (payload.characterPositions) renderPositions(payload.characterPositions);
+  if (payload.eliminatedPlayerIds) eliminatedPlayerIds = payload.eliminatedPlayerIds;
   renderTurnStatus();
   renderGamePlayers(gamePlayers);
 }
@@ -392,6 +453,36 @@ socket.on(PUBLIC.GAME_STATE_UPDATE, (payload) => {
   if (payload.activePlayerId !== myPlayerId) {
     clearMoveUi();
   }
+});
+
+// A wrong accusation: that player is out; the game goes on
+socket.on(PUBLIC.ACCUSATION_RESULT, ({ playerId, suspectId, weaponId, roomId }) => {
+  const who = playerId === myPlayerId ? "You" : playerLabel(playerId);
+  console.log(`Client: ${who} accused ${describeSolution({ suspectId, weaponId, roomId })} and was wrong`);
+  if (!eliminatedPlayerIds.includes(playerId)) eliminatedPlayerIds.push(playerId);
+  if (playerId === myPlayerId) {
+    eliminationNote.hidden = false;
+    clearMoveUi();
+  }
+  renderGamePlayers(gamePlayers);
+});
+
+// Win: a correct accusation
+socket.on(PUBLIC.GAME_WON, ({ winnerId, solution }) => {
+  const youWon = winnerId === myPlayerId;
+  showGameOver({
+    title: youWon ? "You win!" : `${playerLabel(winnerId)} wins!`,
+    detail: `It was ${describeSolution(solution)}.`,
+    win: youWon,
+  });
+});
+
+// Loss for everyone: all players accused wrong
+socket.on(PUBLIC.GAME_ENDED_NO_WINNER, ({ solution }) => {
+  showGameOver({
+    title: "Game over: no one solved the case",
+    detail: `It was ${describeSolution(solution)}.`,
+  });
 });
 
 socket.on(PRIVATE.PLAYER_VIEW_UPDATE, (payload) => {
