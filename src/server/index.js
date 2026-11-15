@@ -77,6 +77,7 @@ function publicGameState(gameId, game) {
     stateVersion: game.stateVersion ?? 0,
     characterPositions: game.board.getCharacterPositions(),
     phase: game.phase,
+    eliminatedPlayerIds: game.turnOrder.filter((e) => e.eliminated).map((e) => e.playerId),
   };
 }
 

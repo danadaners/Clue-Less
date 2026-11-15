@@ -1,3 +1,11 @@
+/**
+ * Game Logic: suggestions, disprovals, and accusations
+ * (Design Document 3.1 makeSuggestion / submitDisproval / makeAccusation,
+ * 3.11 Solution, 3.12 Suggestion).
+ *
+ * These functions only change game state and return what happened.
+ * Communication (server/index.js) decides who gets which message.
+ */
 import { ERROR_CODES } from "../../shared/messages.js";
 import { GameError } from "../GameError.js";
 import { roomLocationId, parseLocationId } from "./board.js";

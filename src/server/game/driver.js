@@ -1,412 +1,173 @@
 /**
- * Driver for Game Logic: payload validation stubs plus board / movement / turns.
- * Run: node src/server/game/driver.js
+ * Game Logic: suggestions, disprovals, and accusations
+ * (Design Document 3.1 makeSuggestion / submitDisproval / makeAccusation,
+ * 3.11 Solution, 3.12 Suggestion).
+ *
+ * These functions only change game state and return what happened.
+ * Communication (server/index.js) decides who gets which message.
  */
-
-import assert from 'node:assert/strict';
-import { assessAction, COMMANDS } from './assessAction.js';
+import { ERROR_CODES } from "../../shared/messages.js";
+import { GameError } from "../GameError.js";
+import { roomLocationId, parseLocationId } from "./board.js";
+import { SUSPECT_IDS, WEAPON_IDS, ROOM_IDS } from "./catalog.js";
+import { markEliminated } from "./turn.js";
 import {
-  Board,
-  START_POSITIONS,
-  hallwayId,
-  roomLocationId,
-  SECRET_PASSAGES,
-} from './board.js';
-import {
-  beginPlay,
-  canEndTurn,
-  declareNoWinner,
-  declareWinner,
-  endTurn,
-  finishSuggestion,
-  listLegalMovesForPlayer,
-  movePlayer,
+  GAME_PHASE,
+  TURN_PHASE,
+  isPlayersTurn,
   moveSuspectToRoom,
-} from './play.js';
-import { GAME_PHASE, TURN_PHASE } from './turn.js';
+  finishSuggestion,
+  declareWinner,
+  declareNoWinner,
+} from "./play.js";
 
-const actor = { playerId: 'player-1', gameId: 'GAME' };
-
-function envelope(extra = {}) {
-  return {
-    requestId: 'req-1',
-    gameId: 'GAME',
-    expectedVersion: 0,
-    ...extra,
-  };
-}
-
-function assess(eventName, payload, actorOverride = actor) {
-  return assessAction({
-    actor: actorOverride,
-    eventName,
-    payload,
-  });
-}
-
-const checks = [];
-
-function check(name, fn) {
-  checks.push({ name, fn });
-}
-
-check('create_game is left to Session and Communication', () => {
-  const result = assess('create_game', { displayName: 'Dana' });
-  assert.deepEqual(result, { handled: false });
-});
-
-check('a missing actor is unauthorized', () => {
-  const result = assess(COMMANDS.END_TURN, envelope(), null);
-  assert.equal(result.handled, true);
-  assert.equal(result.accepted, false);
-  assert.equal(result.error.code, 'UNAUTHORIZED');
-});
-
-check('a missing requestId is a bad request', () => {
-  const payload = envelope();
-  delete payload.requestId;
-  const result = assess(COMMANDS.END_TURN, payload);
-  assert.equal(result.error.code, 'BAD_REQUEST');
-  assert.equal(result.error.message, 'requestId is required.');
-});
-
-check('a well-formed end_turn is refused without effects', () => {
-  const payload = envelope();
-  const before = { ...payload };
-  const result = assess(COMMANDS.END_TURN, payload);
-  assert.deepEqual(payload, before);
-  assert.equal(result.accepted, false);
-  assert.deepEqual(result.effects, []);
-  assert.equal(result.error.code, 'ACTION_NOT_ALLOWED');
-  assert.equal(result.error.message, 'Not implemented in the skeletal increment.');
-  assert.equal(result.error.requestId, 'req-1');
-});
-
-check('select_character rejects an unknown suspect', () => {
-  const result = assess(COMMANDS.SELECT_CHARACTER, envelope({ characterId: 'sherlock' }));
-  assert.equal(result.error.code, 'BAD_REQUEST');
-  assert.equal(result.error.message, 'characterId is not a recognized id.');
-});
-
-check('select_character accepts a canonical suspect and stays a stub', () => {
-  const result = assess(COMMANDS.SELECT_CHARACTER, envelope({ characterId: 'professor_plum' }));
-  assert.equal(result.error.code, 'ACTION_NOT_ALLOWED');
-});
-
-check('start_game rejects a client-supplied solution', () => {
-  const result = assess(COMMANDS.START_GAME, envelope({ solution: { roomId: 'study' } }));
-  assert.equal(result.error.message, 'solution is decided by the server, not the client.');
-});
-
-check('an adjacent move to a room is a stub', () => {
-  const result = assess(COMMANDS.MOVE_PLAYER, envelope({ moveType: 'adjacent', destinationId: 'room:kitchen' }));
-  assert.equal(result.error.code, 'ACTION_NOT_ALLOWED');
-});
-
-check('a hallway id must list its rooms in alphabetical order', () => {
-  const result = assess(COMMANDS.MOVE_PLAYER, envelope({ moveType: 'adjacent', destinationId: 'hallway:study:hall' }));
-  assert.equal(result.error.message, 'destinationId is not a recognized location.');
-});
-
-check('stay cannot include a destination', () => {
-  const result = assess(COMMANDS.MOVE_PLAYER, envelope({ moveType: 'stay', destinationId: 'room:hall' }));
-  assert.equal(result.error.message, 'destinationId is only allowed for adjacent and secret_passage moves.');
-});
-
-check('a suggestion cannot name the room', () => {
-  const result = assess(COMMANDS.MAKE_SUGGESTION, envelope({ suspectId: 'miss_scarlet', weaponId: 'rope', roomId: 'hall' }));
-  assert.equal(result.error.message, "roomId is supplied by the server from the player's current room.");
-});
-
-check('a well-formed suggestion is a stub', () => {
-  const result = assess(COMMANDS.MAKE_SUGGESTION, envelope({ suspectId: 'miss_scarlet', weaponId: 'lead_pipe' }));
-  assert.equal(result.error.code, 'ACTION_NOT_ALLOWED');
-});
-
-check('disproval requires a category:id card', () => {
-  const result = assess(COMMANDS.SUBMIT_DISPROVAL, envelope({ suggestionId: 'sug-1', cardId: 'rope' }));
-  assert.equal(result.error.message, 'cardId is not a recognized id.');
-});
-
-check('a well-formed disproval is a stub', () => {
-  const result = assess(COMMANDS.SUBMIT_DISPROVAL, envelope({ suggestionId: 'sug-1', cardId: 'weapon:rope' }));
-  assert.equal(result.error.code, 'ACTION_NOT_ALLOWED');
-});
-
-check('an accusation needs a suspect, weapon, and room', () => {
-  const result = assess(COMMANDS.MAKE_ACCUSATION, envelope({ suspectId: 'mr_green', weaponId: 'wrench' }));
-  assert.equal(result.error.message, 'roomId is required.');
-});
-
-check('a well-formed accusation is a stub and does not reveal a solution', () => {
-  const result = assess(COMMANDS.MAKE_ACCUSATION, envelope({ suspectId: 'mr_green', weaponId: 'wrench', roomId: 'study' }));
-  assert.equal(result.accepted, false);
-  assert.equal(result.error.code, 'ACTION_NOT_ALLOWED');
-  assert.equal(result.error.solution, undefined);
-});
-
-check('the actor gameId must match the payload', () => {
-  const result = assess(COMMANDS.END_TURN, envelope(), { playerId: 'player-1', gameId: 'OTHER' });
-  assert.equal(result.error.message, 'payload gameId does not match the authenticated actor.');
-});
-
-function sampleGame() {
-  const players = [
-    { id: 'p-scarlet', displayName: 'A', characterId: 'miss_scarlet' },
-    { id: 'p-mustard', displayName: 'B', characterId: 'colonel_mustard' },
-    { id: 'p-plum', displayName: 'C', characterId: 'professor_plum' },
-  ];
-  const game = { players: new Map(players.map((p) => [p.id, p])) };
-  beginPlay(game);
-  return game;
-}
-
-check('board has 21 locations and places six start hallways', () => {
-  const board = new Board();
-  assert.equal(board.locationCount, 21);
-  board.placeTokens();
-  for (const [characterId, locationId] of Object.entries(START_POSITIONS)) {
-    assert.equal(board.getTokenLocation(characterId), locationId);
+/**
+ * Suggest a suspect and weapon in the room the player is in.
+ * Moves the suspect's token into that room, then finds the first player
+ * after the suggester (in turn order) who can disprove it.
+ *
+ * @returns {{ suggestion, disprover, matchingCardIds }}
+ *   disprover is null when no one can disprove.
+ */
+export function makeSuggestion(game, playerId, { suspectId, weaponId } = {}) {
+  requireInProgress(game);
+  requireTurn(game, playerId);
+  if (game.turnPhase !== TURN_PHASE.AWAITING_SUGGESTION) {
+    throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, "You can't make a suggestion right now.");
   }
-  assert.equal(board.getCharacterPositions().length, 6);
-});
-
-check('secret passages link study-kitchen and lounge-conservatory', () => {
-  const board = new Board();
-  for (const [a, b] of SECRET_PASSAGES) {
-    const roomA = board.getLocation(roomLocationId(a));
-    const roomB = board.getLocation(roomLocationId(b));
-    assert.equal(roomA.secretPassage, roomB);
-    assert.equal(roomB.secretPassage, roomA);
+  if (!SUSPECT_IDS.includes(suspectId) || !WEAPON_IDS.includes(weaponId)) {
+    throw new GameError(ERROR_CODES.BAD_REQUEST, "Unknown suspect or weapon.");
   }
-});
 
-check('hallway capacity blocks a second token', () => {
-  const board = new Board();
-  board.placeTokens();
-  // Scarlet still occupies hall-lounge. Put Mustard in the Lounge so the
-  // hallway is adjacent, then capacity must block entry.
-  board.updatePosition('colonel_mustard', roomLocationId('lounge'));
-  assert.equal(
-    board.isLegalMove(
-      'colonel_mustard',
-      'adjacent',
-      hallwayId('hall', 'lounge'),
-    ),
-    false,
-  );
-  // Vacate the hallway; Mustard can enter.
-  board.updatePosition('miss_scarlet', roomLocationId('hall'));
-  assert.equal(
-    board.isLegalMove(
-      'colonel_mustard',
-      'adjacent',
-      hallwayId('hall', 'lounge'),
-    ),
-    true,
-  );
-});
+  const suggester = game.players.get(playerId);
+  const roomId = currentRoomId(game, suggester.characterId);
+  if (!roomId) {
+    throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, "You must be in a room to make a suggestion.");
+  }
 
-check('turn order starts with Miss Scarlet then Mustard', () => {
-  const game = sampleGame();
-  assert.deepEqual(
-    game.turnOrder.map((p) => p.characterId),
-    ['miss_scarlet', 'colonel_mustard', 'professor_plum'],
-  );
-  assert.equal(game.turnOrder[0].playerId, 'p-scarlet');
-  assert.equal(game.turnPhase, TURN_PHASE.AWAITING_MOVE);
-});
+  moveSuspectToRoom(game, suspectId, roomId);
 
-check('adjacent move into a room enters awaiting_suggestion', () => {
-  const game = sampleGame();
-  // Scarlet starts in hall-lounge; can enter lounge or hall.
-  const result = movePlayer(game, 'p-scarlet', {
-    moveType: 'adjacent',
-    destinationId: roomLocationId('lounge'),
-  });
-  assert.equal(result.turnPhase, TURN_PHASE.AWAITING_SUGGESTION);
-  assert.equal(game.board.getTokenLocation('miss_scarlet'), roomLocationId('lounge'));
-});
+  const suggestion = { suggesterId: playerId, suspectId, weaponId, roomId };
+  const { disprover, matchingCardIds } = findDisprover(game, suggestion);
 
-check('adjacent move into a hallway enters turn_complete', () => {
-  const game = sampleGame();
-  movePlayer(game, 'p-scarlet', {
-    moveType: 'adjacent',
-    destinationId: roomLocationId('lounge'),
-  });
-  // Force Scarlet back to a room with a free exit for a hallway test via updatePosition.
-  // Put Scarlet in study (empty), then move to study-hall hallway.
-  game.board.updatePosition('miss_scarlet', roomLocationId('study'));
-  game.turnPhase = TURN_PHASE.AWAITING_MOVE;
-  const result = movePlayer(game, 'p-scarlet', {
-    moveType: 'adjacent',
-    destinationId: hallwayId('hall', 'study'),
-  });
-  assert.equal(result.turnPhase, TURN_PHASE.TURN_COMPLETE);
-});
+  if (!disprover) {
+    finishSuggestion(game); // nobody can disprove: the turn can go on
+    return { suggestion, disprover: null, matchingCardIds: [] };
+  }
 
-check('secret passage from study to kitchen is legal', () => {
-  const game = sampleGame();
-  game.board.updatePosition('miss_scarlet', roomLocationId('study'));
-  assert.equal(
-    game.board.isLegalMove(
-      'miss_scarlet',
-      'secret_passage',
-      roomLocationId('kitchen'),
-    ),
-    true,
-  );
-  const result = movePlayer(game, 'p-scarlet', {
-    moveType: 'secret_passage',
-    destinationId: roomLocationId('kitchen'),
-  });
-  assert.equal(result.turnPhase, TURN_PHASE.AWAITING_SUGGESTION);
-});
-
-check('endTurn skips an eliminated player', () => {
-  const game = sampleGame();
-  // Scarlet ends without moving by forcing turn_complete.
-  game.turnPhase = TURN_PHASE.TURN_COMPLETE;
-  game.turnOrder[1].eliminated = true; // Mustard out
-  const result = endTurn(game, 'p-scarlet');
-  assert.equal(result.activePlayerId, 'p-plum');
-  assert.equal(result.turnPhase, TURN_PHASE.AWAITING_MOVE);
-});
-
-check('moveSuspectToRoom and finishSuggestion update phase', () => {
-  const game = sampleGame();
-  movePlayer(game, 'p-scarlet', {
-    moveType: 'adjacent',
-    destinationId: roomLocationId('lounge'),
-  });
+  game.pendingSuggestion = { ...suggestion, askedPlayerId: disprover.id, matchingCardIds };
   game.turnPhase = TURN_PHASE.AWAITING_DISPROVAL;
-  game.pendingSuggestion = { suggestionId: 'sug-1' };
+  game.stateVersion = (game.stateVersion ?? 0) + 1;
+  return { suggestion, disprover, matchingCardIds };
+}
 
-  const moved = moveSuspectToRoom(game, 'professor_plum', 'lounge');
-  assert.equal(moved.destinationId, roomLocationId('lounge'));
-  assert.equal(game.board.getTokenLocation('professor_plum'), roomLocationId('lounge'));
-  assert.equal(game.players.get('p-plum').movedBySuggestion, true);
+/**
+ * The asked player shows one matching card. Only the suggester sees which card.
+ *
+ * @returns {{ suggestion, disproverId, card }}
+ */
+export function submitDisproval(game, playerId, { cardId } = {}) {
+  requireInProgress(game);
+  const pending = game.pendingSuggestion;
+  if (!pending || game.turnPhase !== TURN_PHASE.AWAITING_DISPROVAL) {
+    throw new GameError(ERROR_CODES.STALE_SUGGESTION, "There is no suggestion to disprove.");
+  }
+  if (pending.askedPlayerId !== playerId) {
+    throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, "You were not asked to disprove this suggestion.");
+  }
+  if (!pending.matchingCardIds.includes(cardId)) {
+    throw new GameError(ERROR_CODES.INVALID_CARD, "Choose one of your cards that matches the suggestion.");
+  }
 
-  const finished = finishSuggestion(game);
-  assert.equal(game.pendingSuggestion, null);
-  assert.equal(finished.turnPhase, TURN_PHASE.TURN_COMPLETE);
-});
+  const card = game.players.get(playerId).hand.find((c) => c.id === cardId);
+  const { matchingCardIds, askedPlayerId, ...suggestion } = pending;
+  finishSuggestion(game); // clears pendingSuggestion; suggester can accuse or end turn
+  return { suggestion, disproverId: playerId, card };
+}
 
-check('a player moved by a suggestion may stay on their next turn', () => {
-  const game = sampleGame();
-  movePlayer(game, 'p-scarlet', {
-    moveType: 'adjacent',
-    destinationId: roomLocationId('lounge'),
-  });
-  moveSuspectToRoom(game, 'colonel_mustard', 'lounge');
-  finishSuggestion(game);
-  endTurn(game, 'p-scarlet'); // next is Mustard
-  const moves = listLegalMovesForPlayer(game, 'p-mustard');
-  assert.ok(moves.some((m) => m.moveType === 'stay'));
-  movePlayer(game, 'p-mustard', { moveType: 'stay' });
-  assert.equal(game.turnPhase, TURN_PHASE.AWAITING_SUGGESTION);
-  assert.equal(game.players.get('p-mustard').movedBySuggestion, false);
-});
+/**
+ * Accuse a suspect, weapon, and room. Correct: the player wins.
+ * Wrong: the player is eliminated (they can still disprove suggestions),
+ * their token leaves any hallway, and their turn ends.
+ * If everyone is eliminated, the game ends with no winner.
+ *
+ * @returns {{ correct, solution?, everyoneEliminated }}
+ *   solution ({ suspectId, weaponId, roomId }) only when the game ended.
+ */
+export function makeAccusation(game, playerId, { suspectId, weaponId, roomId } = {}) {
+  requireInProgress(game);
+  requireTurn(game, playerId);
+  if (game.turnPhase === TURN_PHASE.AWAITING_DISPROVAL) {
+    throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, "Wait for your suggestion to be answered.");
+  }
+  if (!SUSPECT_IDS.includes(suspectId) || !WEAPON_IDS.includes(weaponId) || !ROOM_IDS.includes(roomId)) {
+    throw new GameError(ERROR_CODES.BAD_REQUEST, "Unknown suspect, weapon, or room.");
+  }
 
-check('a blocked player can end their turn without moving', () => {
-  const game = sampleGame();
-  game.board.updatePosition('miss_scarlet', roomLocationId('ballroom'));
-  // Ballroom's three hallways are all occupied
-  game.board.updatePosition('colonel_mustard', hallwayId('ballroom', 'billiard_room'));
-  assert.equal(game.board.getTokenLocation('mrs_white'), hallwayId('ballroom', 'kitchen'));
-  assert.equal(game.board.getTokenLocation('mr_green'), hallwayId('ballroom', 'conservatory'));
-  assert.deepEqual(listLegalMovesForPlayer(game, 'p-scarlet'), []);
-  assert.equal(canEndTurn(game, 'p-scarlet'), true);
-  const result = endTurn(game, 'p-scarlet');
-  assert.notEqual(result.activePlayerId, 'p-scarlet');
-});
+  const { solution } = game;
+  const correct =
+    solution.suspect.id === suspectId && solution.weapon.id === weaponId && solution.room.id === roomId;
 
-check('a player who can move cannot skip their move', () => {
-  const game = sampleGame();
-  assert.equal(canEndTurn(game, 'p-scarlet'), false);
-  assert.throws(() => endTurn(game, 'p-scarlet'));
-});
+  if (correct) {
+    const won = declareWinner(game, playerId);
+    return { correct: true, solution: won.solution, everyoneEliminated: false };
+  }
 
-check('assessAction applies move_player when a game is supplied', () => {
-  const game = sampleGame();
-  const result = assessAction({
-    actor: { playerId: 'p-scarlet', gameId: 'GAME' },
-    eventName: COMMANDS.MOVE_PLAYER,
-    payload: envelope({
-      moveType: 'adjacent',
-      destinationId: roomLocationId('hall'),
-    }),
-    game,
-  });
-  assert.equal(result.accepted, true);
-  assert.equal(result.result.turnPhase, TURN_PHASE.AWAITING_SUGGESTION);
-});
+  const player = game.players.get(playerId);
+  player.eliminated = true;
+  relocateIfInHallway(game, player.characterId);
+  markEliminated(game, playerId); // turnOrder copy + passes the turn on
+  game.stateVersion = (game.stateVersion ?? 0) + 1;
 
-check('assessAction applies end_turn when a game is supplied', () => {
-  const game = sampleGame();
-  game.turnPhase = TURN_PHASE.TURN_COMPLETE;
-  const result = assessAction({
-    actor: { playerId: 'p-scarlet', gameId: 'GAME' },
-    eventName: COMMANDS.END_TURN,
-    payload: envelope(),
-    game,
-  });
-  assert.equal(result.accepted, true);
-  assert.equal(result.result.activePlayerId, 'p-mustard');
-});
+  if (game.turnOrder.every((entry) => entry.eliminated)) {
+    const ended = declareNoWinner(game);
+    return { correct: false, solution: ended.solution, everyoneEliminated: true };
+  }
+  return { correct: false, everyoneEliminated: false };
+}
 
-check('listLegalMovesForPlayer returns hallway exits for Scarlet', () => {
-  const game = sampleGame();
-  const moves = listLegalMovesForPlayer(game, 'p-scarlet');
-  assert.ok(moves.length >= 2);
-  assert.ok(moves.every((m) => m.moveType === 'adjacent'));
-  assert.ok(moves.some((m) => m.destinationId === roomLocationId('hall')));
-  assert.ok(moves.some((m) => m.destinationId === roomLocationId('lounge')));
-});
+/** First player after the suggester, in turn order, holding a matching card. */
+function findDisprover(game, { suggesterId, suspectId, weaponId, roomId }) {
+  const order = game.turnOrder.map((entry) => entry.playerId);
+  const start = order.indexOf(suggesterId);
+  for (let i = 1; i < order.length; i++) {
+    const player = game.players.get(order[(start + i) % order.length]);
+    // eliminated players still disprove
+    const matchingCardIds = (player.hand ?? [])
+      .map((c) => c.id)
+      .filter((id) => id === suspectId || id === weaponId || id === roomId);
+    if (matchingCardIds.length > 0) {
+      return { disprover: player, matchingCardIds };
+    }
+  }
+  return { disprover: null, matchingCardIds: [] };
+}
 
-check('endTurn is refused before a move', () => {
-  const game = sampleGame();
-  assert.throws(
-    () => endTurn(game, 'p-scarlet'),
-    (err) => err.code === 'ACTION_NOT_ALLOWED',
-  );
-});
+/** The room id ("lounge") the character is in, or null if in a hallway. */
+function currentRoomId(game, characterId) {
+  const location = parseLocationId(game.board.getTokenLocation(characterId) ?? "");
+  return location?.kind === "room" ? location.roomId : null;
+}
 
-check('declareWinner and declareNoWinner end the game', () => {
-  const game = sampleGame();
-  game.solution = {
-    suspect: { id: 'miss_scarlet', category: 'suspect' },
-    weapon: { id: 'rope', category: 'weapon' },
-    room: { id: 'hall', category: 'room' },
-  };
-  const won = declareWinner(game, 'p-scarlet');
-  assert.equal(game.phase, GAME_PHASE.ENDED);
-  assert.equal(won.winnerPlayerId, 'p-scarlet');
-  assert.equal(won.solution.weaponId, 'rope');
-
-  const game2 = sampleGame();
-  game2.solution = game.solution;
-  const none = declareNoWinner(game2);
-  assert.equal(game2.phase, GAME_PHASE.ENDED);
-  assert.equal(none.reason, 'all_players_eliminated');
-  assert.equal(none.winnerPlayerId, undefined);
-});
-
-let failed = 0;
-for (const { name, fn } of checks) {
-  try {
-    fn();
-    console.log(`ok  ${name}`);
-  } catch (error) {
-    failed += 1;
-    console.error(`FAIL ${name}`);
-    console.error(error);
+/**
+ * An eliminated player's token stays on the board, but it must not block
+ * a hallway forever: move it into the alphabetically first adjacent room.
+ */
+function relocateIfInHallway(game, characterId) {
+  const location = parseLocationId(game.board.getTokenLocation(characterId) ?? "");
+  if (location?.kind === "hallway") {
+    game.board.updatePosition(characterId, roomLocationId(location.roomA));
   }
 }
 
-if (failed > 0) {
-  console.error(`${failed} check(s) failed.`);
-  process.exit(1);
+function requireInProgress(game) {
+  if (!game?.board || game.phase !== GAME_PHASE.IN_PROGRESS) {
+    throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, "Game is not in progress.");
+  }
 }
 
-console.log(`${checks.length} checks passed.`);
+function requireTurn(game, playerId) {
+  if (!isPlayersTurn(game, playerId)) {
+    throw new GameError(ERROR_CODES.NOT_YOUR_TURN, "Not your turn.");
+  }
+}
