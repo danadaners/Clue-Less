@@ -33,6 +33,9 @@ export function beginPlay(game, players) {
     if (player && player.eliminated === undefined) {
       player.eliminated = false;
     }
+    if (player) {
+      player.movedBySuggestion = false;
+    }
   }
 
   const board = new Board();
@@ -52,7 +55,6 @@ export function beginPlay(game, players) {
   game.phase = GAME_PHASE.IN_PROGRESS;
   game.turnPhase = TURN_PHASE.AWAITING_MOVE;
   game.pendingSuggestion = null;
-  game.suggestionMovedPlayerId = null;
   game.stateVersion = (game.stateVersion ?? 0) + 1;
 
   return {
@@ -94,7 +96,7 @@ export function movePlayer(game, playerId, { moveType, destinationId } = {}) {
   }
 
   if (moveType === 'stay') {
-    if (game.suggestionMovedPlayerId !== playerId) {
+    if (!playerById(game, playerId)?.movedBySuggestion) {
       throw new GameError(
         ERROR_CODES.ACTION_NOT_ALLOWED,
         'stay is only allowed after being moved by a suggestion.',
@@ -110,7 +112,7 @@ export function movePlayer(game, playerId, { moveType, destinationId } = {}) {
       throw new GameError(ERROR_CODES.ACTION_NOT_ALLOWED, 'stay is not legal here.');
     }
     game.turnPhase = TURN_PHASE.AWAITING_SUGGESTION;
-    game.suggestionMovedPlayerId = null;
+    playerById(game, playerId).movedBySuggestion = false;
     game.stateVersion = (game.stateVersion ?? 0) + 1;
     return {
       characterPositions: game.board.getCharacterPositions(),
@@ -129,7 +131,11 @@ export function movePlayer(game, playerId, { moveType, destinationId } = {}) {
   } else {
     game.turnPhase = TURN_PHASE.TURN_COMPLETE;
   }
-  game.suggestionMovedPlayerId = null;
+  // This player has now taken their move, so the "may stay" option is used up
+  const mover = playerById(game, playerId);
+  if (mover) {
+    mover.movedBySuggestion = false;
+  }
   game.stateVersion = (game.stateVersion ?? 0) + 1;
 
   return {
@@ -151,10 +157,10 @@ export function movePlayer(game, playerId, { moveType, destinationId } = {}) {
  */
 export function endTurn(game, playerId) {
   requireInProgress(game);
-  if (
-    game.turnPhase !== TURN_PHASE.TURN_COMPLETE &&
-    game.turnPhase !== TURN_PHASE.AWAITING_SUGGESTION
-  ) {
+  if (!isPlayersTurn(game, playerId)) {
+    throw new GameError(ERROR_CODES.NOT_YOUR_TURN, 'Not your turn.');
+  }
+  if (!canEndTurn(game, playerId)) {
     throw new GameError(
       ERROR_CODES.ACTION_NOT_ALLOWED,
       'End turn is only allowed after you have moved.',
@@ -184,7 +190,7 @@ export function listLegalMovesForPlayer(game, playerId) {
   }
   const moves = game.board.listLegalMoves(characterId);
   if (
-    game.suggestionMovedPlayerId === playerId &&
+    playerById(game, playerId)?.movedBySuggestion &&
     game.board.isLegalMove(characterId, 'stay', undefined)
   ) {
     moves.push({ moveType: 'stay' });
@@ -210,7 +216,11 @@ export function moveSuspectToRoom(game, characterId, roomId) {
 
   const controlling = game.turnOrder?.find((p) => p.characterId === characterId);
   if (controlling && controlling.playerId !== getActivePlayerId(game)) {
-    game.suggestionMovedPlayerId = controlling.playerId;
+    // Kept until that player's next move, so they can choose to stay and suggest
+    const moved = playerById(game, controlling.playerId);
+    if (moved) {
+      moved.movedBySuggestion = true;
+    }
   }
 
   game.stateVersion = (game.stateVersion ?? 0) + 1;
@@ -295,6 +305,40 @@ function publicSolution(solution) {
     weaponId: solution.weapon?.id ?? solution.weaponId ?? null,
     roomId: solution.room?.id ?? solution.roomId ?? null,
   };
+}
+
+/**
+ * True when the active player may end their turn: after moving, or when
+ * they are blocked (no legal move), in which case they lose their move.
+ *
+ * @param {object} game
+ * @param {string} playerId
+ */
+export function canEndTurn(game, playerId) {
+  if (!isPlayersTurn(game, playerId)) {
+    return false;
+  }
+  if (
+    game.turnPhase === TURN_PHASE.TURN_COMPLETE ||
+    game.turnPhase === TURN_PHASE.AWAITING_SUGGESTION
+  ) {
+    return true;
+  }
+  return (
+    game.turnPhase === TURN_PHASE.AWAITING_MOVE &&
+    listLegalMovesForPlayer(game, playerId).length === 0
+  );
+}
+
+/**
+ * @param {object} game
+ * @param {string} playerId
+ */
+function playerById(game, playerId) {
+  if (game.players instanceof Map) {
+    return game.players.get(playerId) ?? null;
+  }
+  return (game.players ?? []).find((p) => (p.id ?? p.playerId) === playerId) ?? null;
 }
 
 /**

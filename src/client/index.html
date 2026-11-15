@@ -154,6 +154,33 @@
       margin-top: 12px;
     }
 
+    .game-result {
+      margin: 12px 0;
+      padding: 12px 16px;
+      border: 2px solid var(--classic-blue);
+      border-radius: 8px;
+      background: #e7eef4;
+    }
+    .game-result--win {
+      border-color: #2f6b3a;
+      background: #e6f2e8;
+    }
+    .game-result h3 {
+      margin: 0 0 4px;
+    }
+    .elimination-note {
+      color: #9b1c1c;
+      font-weight: 700;
+    }
+    .accuse-panel {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #c9ced6;
+    }
+    .accuse-panel select {
+      margin: 4px;
+      padding: 6px;
+    }
     #game-view {
       max-width: 640px;
       margin: 20px auto 0;
@@ -292,12 +319,27 @@
 
   <section id="game-view" hidden>
     <h2>Game <span id="game-view-id"></span></h2>
+    <div id="game-result" class="game-result" hidden>
+      <h3 id="result-title"></h3>
+      <p id="result-detail"></p>
+    </div>
     <p id="turn-status"></p>
+    <p id="elimination-note" class="elimination-note" hidden>
+      Your accusation was wrong, so you're out. You can still show cards to disprove suggestions.
+    </p>
     <div class="board-placeholder">Game board</div>
     <div id="turn-actions" hidden>
       <h3>Your move</h3>
       <div id="move-actions"></div>
       <button id="end-turn-btn" class="btn btn--primary" hidden>End Turn</button>
+      <div id="accuse-panel" class="accuse-panel" hidden>
+        <h3>Make an accusation</h3>
+        <p class="muted">If you're wrong, you're out of the game.</p>
+        <select id="accuse-suspect" aria-label="Suspect"></select>
+        <select id="accuse-weapon" aria-label="Weapon"></select>
+        <select id="accuse-room" aria-label="Room"></select>
+        <button id="accuse-btn" class="btn">Accuse</button>
+      </div>
       <p id="game-action-error" class="error" role="alert"></p>
     </div>
     <h3>Token positions</h3>
