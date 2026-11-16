@@ -35,11 +35,15 @@ app.use(
 const games = new Map();
 
 function gameList() {
-  return [...games.entries()].map(([gameId, game]) => ({
-    gameId,
-    host: game.players.get(game.hostId).displayName,
-    playerCount: game.players.size,
-  }));
+  return [...games.entries()].map(([gameId, game]) => {
+    const host =
+      game.players.get(game.hostId) ?? [...game.players.values()][0];
+    return {
+      gameId,
+      host: host?.displayName ?? "Unknown",
+      playerCount: game.players.size,
+    };
+  });
 }
 
 // Keeps the games list up to date
@@ -50,6 +54,9 @@ function broadcastGameList() {
 // Sends a PUBLIC.LOBBY_UPDATE to all players in a given gameId.
 function sendPlayers(gameId) {
   const game = games.get(gameId);
+  if (!game || game.started) {
+    return;
+  }
   const players = [...game.players.values()].map((player) => ({
     id: player.id,
     displayName: player.displayName,
@@ -65,8 +72,76 @@ function sendPlayers(gameId) {
 
 function sendMessageToPlayer(gameId, playerId, message) {
   const game = games.get(gameId);
+  const player = game?.players.get(playerId);
+  player?.socket?.emit(PRIVATE.MESSAGE, { message });
+}
+
+function clearSocketGame(socket) {
+  if (!socket) return;
+  const gameId = socket.data.gameId;
+  if (gameId) {
+    socket.leave(gameId);
+  }
+  delete socket.data.gameId;
+  delete socket.data.playerId;
+}
+
+/**
+ * Leave lobby or abandon an in-progress game.
+ * Lobby: remove this seat (fixes refresh leaving a ghost host).
+ * In progress: cancel the game for everyone (full reconnect is Target work).
+ */
+function removePlayerFromGame(gameId, playerId, { reason = "left" } = {}) {
+  const game = games.get(gameId);
+  if (!game) {
+    return { removed: false };
+  }
+
   const player = game.players.get(playerId);
-  player.socket.emit(PRIVATE.MESSAGE, { message });
+  if (!player) {
+    return { removed: false };
+  }
+
+  const displayName = player.displayName;
+
+  if (game.started) {
+    io.to(gameId).emit(PUBLIC.GAME_CANCELLED_DISCONNECT, {
+      gameId,
+      playerId,
+      displayName,
+      reason,
+    });
+    for (const p of game.players.values()) {
+      clearSocketGame(p.socket);
+    }
+    games.delete(gameId);
+    broadcastGameList();
+    console.log(`Server: game ${gameId} cancelled (${displayName} ${reason})`);
+    return { removed: true, cancelled: true };
+  }
+
+  game.players.delete(playerId);
+  game.lobby.removePlayer(playerId);
+  clearSocketGame(player.socket);
+
+  if (game.players.size === 0) {
+    games.delete(gameId);
+    broadcastGameList();
+    console.log(`Server: lobby ${gameId} closed (empty after ${displayName} ${reason})`);
+    return { removed: true, closed: true };
+  }
+
+  if (game.hostId === playerId) {
+    const remainingIds = [...game.players.keys()];
+    game.lobby.reassignHost(remainingIds);
+    game.hostId = game.lobby.hostPlayerId;
+    console.log(`Server: host left ${gameId}; new host is ${game.hostId}`);
+  }
+
+  sendPlayers(gameId);
+  broadcastGameList();
+  console.log(`Server: ${displayName} ${reason} lobby ${gameId}`);
+  return { removed: true };
 }
 
 /** Public in-progress snapshot for game_state_update. */
@@ -146,6 +221,9 @@ io.on("connection", (socket) => {
     if (!displayName) {
       return callback({ ok: false, error: "Name is required." });
     }
+    if (socket.data.gameId) {
+      return callback({ ok: false, error: "You are already in a game. Leave it first." });
+    }
 
     const gameId = generateGameId();
     console.log(
@@ -213,6 +291,25 @@ io.on("connection", (socket) => {
     const message = `${displayName} has joined your game!`
     sendMessageToPlayer(gameId, game.hostId, message);
     broadcastGameList();
+  });
+
+  socket.on(CLIENT.LEAVE_GAME, (_payload, callback) => {
+    const { gameId, playerId } = socket.data;
+    if (!gameId || !playerId) {
+      return callback?.({ ok: false, error: "You are not in a game." });
+    }
+    const result = removePlayerFromGame(gameId, playerId, { reason: "left" });
+    clearSocketGame(socket);
+    callback?.({ ok: true, ...result });
+  });
+
+  socket.on("disconnect", () => {
+    const { gameId, playerId } = socket.data;
+    if (!gameId || !playerId) {
+      return;
+    }
+    // Refresh/close tab: drop lobby seat so rejoining is not a duplicate ghost player.
+    removePlayerFromGame(gameId, playerId, { reason: "disconnected" });
   });
 
   socket.on(CLIENT.SELECT_CHARACTER, ({ characterId } = {}, callback) => {

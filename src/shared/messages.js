@@ -9,6 +9,7 @@
 export const CLIENT = Object.freeze({
   CREATE_GAME: "create_game",
   JOIN_GAME: "join_game",
+  LEAVE_GAME: "leave_game",
   SELECT_CHARACTER: "select_character",
   START_GAME: "start_game", 
   MOVE_PLAYER: "move_player",

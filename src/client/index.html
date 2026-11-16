@@ -13,6 +13,9 @@
     :root {
       --classic-blue: #0F4C81;
       --dark-blue: #202C4C;
+      --team-orange: #e07a2f;
+      --room-fill: #c5d9eb;
+      --hallway-fill: #8a93a8;
     }
 
     body {
@@ -187,20 +190,206 @@
       padding: 6px;
     }
     #game-view {
-      max-width: 640px;
+      max-width: 720px;
       margin: 20px auto 0;
     }
 
-    .board-placeholder {
+    .game-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin: 8px 0 12px;
+    }
+
+    .game-tools .btn {
+      max-width: none;
+    }
+
+    .board-grid {
+      display: grid;
+      grid-template-columns: 1fr 36px 1fr 36px 1fr;
+      grid-template-rows: 88px 28px 88px 28px 88px;
+      gap: 4px;
+      margin: 12px auto 16px;
+      max-width: 520px;
+    }
+
+    .board-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--classic-blue);
+      background: #f4f8fb;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--dark-blue);
+      position: relative;
+      padding: 2px;
+    }
+
+    .board-cell--room {
+      background: var(--room-fill);
+      border-color: var(--classic-blue);
+      border-width: 2px;
+    }
+
+    .board-cell--hallway {
+      background: var(--hallway-fill);
+      border-color: var(--dark-blue);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 600;
+    }
+
+    .board-cell--empty {
+      border: none;
+      background: transparent;
+    }
+
+    .board-cell--legal {
+      outline: 2px solid var(--team-orange);
+      outline-offset: -2px;
+      cursor: pointer;
+      background: #ffe0c2;
+      border-color: var(--team-orange);
+    }
+
+    .board-cell--legal:hover {
+      background: #ffd0a3;
+    }
+
+    .board-cell-title {
+      line-height: 1.1;
+      text-align: center;
+    }
+
+    .secret-badge {
+      position: absolute;
+      width: 52px;
+      height: 18px;
+      box-sizing: border-box;
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 320px;
-      margin: 16px 0;
-      background-color: #e7eef4;
-      border: 2px dashed var(--classic-blue);
-      color: var(--classic-blue);
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 11px;
       font-weight: 700;
+      letter-spacing: 0;
+      text-transform: lowercase;
+      color: #fff;
+      background: var(--dark-blue);
+      border: 1px solid var(--classic-blue);
+      line-height: 1;
+      -webkit-font-smoothing: none;
+      text-rendering: geometricPrecision;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .secret-badge--top-left {
+      top: 2px;
+      left: 2px;
+    }
+
+    .secret-badge--top-right {
+      top: 2px;
+      right: 2px;
+    }
+
+    .secret-badge--bottom-left {
+      bottom: 2px;
+      left: 2px;
+    }
+
+    .secret-badge--bottom-right {
+      bottom: 2px;
+      right: 2px;
+    }
+
+    .board-tokens {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      justify-content: center;
+      margin-top: 4px;
+    }
+
+    .token {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1px solid #202c4c;
+      color: #fff;
+      font-size: 0.55rem;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+
+    .panel-dialog {
+      border: 2px solid var(--classic-blue);
+      border-radius: 8px;
+      padding: 0;
+      width: min(420px, 92vw);
+      max-height: 80vh;
+    }
+
+    .panel-dialog::backdrop {
+      background: rgba(15, 30, 50, 0.45);
+    }
+
+    .panel-dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #e7eef4;
+      border-bottom: 1px solid #c9ced6;
+    }
+
+    .panel-dialog-header h3 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .panel-dialog-body {
+      padding: 12px;
+      overflow-y: auto;
+      max-height: min(55vh, 420px);
+      text-align: left;
+    }
+
+    #action-log-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    #action-log-list li {
+      padding: 6px 0;
+      border-bottom: 1px solid #e2e6eb;
+      font-size: 0.9rem;
+    }
+
+    .checklist-section {
+      margin-bottom: 14px;
+    }
+
+    .checklist-section h4 {
+      margin: 0 0 6px;
+    }
+
+    .checklist-section label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 0;
+      font-size: 0.9rem;
     }
 
     #hand-list {
@@ -261,11 +450,15 @@
       min-height: 1.2em;
     }
 
-    #position-list {
-      list-style: none;
-      padding: 0;
-      text-align: left;
-      font-size: 0.9rem;
+    .suggest-panel {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #c9ced6;
+    }
+
+    .suggest-panel select {
+      margin: 4px;
+      padding: 6px;
     }
   </style>
 </head>
@@ -274,12 +467,33 @@
   <img class="logo" src="assets/ncc-logo.png" alt="No Clue Crew logo">
   <h1>Clue-Less</h1>
 
-  <dialog id="dialog-box"></dialog>
+  <dialog id="dialog-box">
+    <p id="dialog-box-message"></p>
+    <button type="button" id="dialog-box-close" class="btn">Close</button>
+  </dialog>
   <dialog id="disproof-overlay">
-        <p id="disproof-text"> PLAYER is has made the suggestion SUGGESTION. Choose a card to reveal to disprove their suggestion.</p>
-        <select id="disproof-select"></select>
-        <button id="disproof-submit" disabled="true">Disprove</button>
-    </dialog>
+    <p id="disproof-text"> PLAYER is has made the suggestion SUGGESTION. Choose a card to reveal to disprove their suggestion.</p>
+    <select id="disproof-select"></select>
+    <button id="disproof-submit" disabled="true">Disprove</button>
+  </dialog>
+
+  <dialog id="action-log-dialog" class="panel-dialog">
+    <div class="panel-dialog-header">
+      <h3>Public action log</h3>
+      <button type="button" id="close-action-log" class="btn">Close</button>
+    </div>
+    <div class="panel-dialog-body">
+      <ul id="action-log-list"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="checklist-dialog" class="panel-dialog">
+    <div class="panel-dialog-header">
+      <h3>Detective checklist</h3>
+      <button type="button" id="close-checklist" class="btn">Close</button>
+    </div>
+    <div class="panel-dialog-body" id="checklist-body"></div>
+  </dialog>
 
   <div class="name-field">
     <input id="display-name" type="text" maxlength="20" autocomplete="nickname" placeholder="enter your name"
@@ -324,6 +538,7 @@
         <button id="start-btn" class="btn btn--primary" disabled>Start Game</button>
         <p id="start-hint"></p>
       </div>
+      <button type="button" id="leave-lobby-btn" class="btn" hidden>Leave lobby</button>
     </section>
   </div>
 
@@ -337,7 +552,13 @@
     <p id="elimination-note" class="elimination-note" hidden>
       Your accusation was wrong, so you're out. You can still show cards to disprove suggestions.
     </p>
-    <div class="board-placeholder">Game board</div>
+    <div class="game-tools">
+      <button type="button" id="open-action-log" class="btn">Action log</button>
+      <button type="button" id="open-checklist" class="btn">Checklist</button>
+      <button type="button" id="leave-game-btn" class="btn">Leave game</button>
+    </div>
+    <div id="board-grid" class="board-grid" aria-label="Clue-Less rooms and hallways"></div>
+    <p class="muted" id="board-hint">Highlighted outline = legal move — click to move.</p>
     <div id="turn-actions" hidden>
       <h3>Your move</h3>
       <div id="move-actions"></div>
@@ -358,13 +579,10 @@
       </div>
       <p id="game-action-error" class="error" role="alert"></p>
     </div>
-    <h3>Token positions</h3>
-    <ul id="position-list"></ul>
     <h3>Your Cards</h3>
     <ul id="hand-list"></ul>
     <h3>Players</h3>
     <ul id="game-player-list"></ul>
-
   </section>
 
   <script src="/socket.io/socket.io.js"></script>
