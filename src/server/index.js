@@ -10,6 +10,7 @@ import { Lobby } from "./game/Lobby.js";
 import {
   beginPlay,
   canEndTurn,
+  canSuggest,
   endTurn,
   listLegalMovesForPlayer,
   movePlayer,
@@ -46,7 +47,7 @@ function broadcastGameList() {
   io.emit("gameList", gameList());
 }
 
-
+// Sends a PUBLIC.LOBBY_UPDATE to all players in a given gameId.
 function sendPlayers(gameId) {
   const game = games.get(gameId);
   const players = [...game.players.values()].map((player) => ({
@@ -124,10 +125,11 @@ function broadcastGameState(gameId, extra = {}) {
         stateVersion: state.stateVersion,
         legalMoves:
           state.turnPhase === TURN_PHASE.AWAITING_MOVE
-            ? listLegalMovesForPlayer(game, state.activePlayerId)
-            : [],
+          ? listLegalMovesForPlayer(game, state.activePlayerId)
+          : [],
         // after moving, or when blocked with no legal move (loses the move)
         canEndTurn: canEndTurn(game, state.activePlayerId),
+        canSuggest: canSuggest(game, state.activePlayerId)
       });
     }
   }
@@ -189,6 +191,10 @@ io.on("connection", (socket) => {
     }
     if (game.started) {
       return callback({ ok: false, error: "That game has already started." });
+    }
+    if (game.players.size >= 6)
+    {
+      return callback({ ok: false, error: "That game already has the maximum number of players."});
     }
 
     console.log(
