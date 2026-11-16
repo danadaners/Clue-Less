@@ -47,7 +47,7 @@ function broadcastGameList() {
   io.emit("gameList", gameList());
 }
 
-
+// Sends a PUBLIC.LOBBY_UPDATE to all players in a given gameId.
 function sendPlayers(gameId) {
   const game = games.get(gameId);
   const players = [...game.players.values()].map((player) => ({
@@ -191,6 +191,10 @@ io.on("connection", (socket) => {
     }
     if (game.started) {
       return callback({ ok: false, error: "That game has already started." });
+    }
+    if (game.players.size >= 6)
+    {
+      return callback({ ok: false, error: "That game already has the maximum number of players."});
     }
 
     console.log(

@@ -337,7 +337,7 @@ export function canSuggest(game, playerId) {
 
   const characterId = characterIdForPlayer(game, playerId);
   const location = game.board.tokenLocations.get(characterId);
-  return game.board.isRoom(location);
+  return game.board.isRoom(location) && game.turnPhase === TURN_PHASE.AWAITING_SUGGESTION;
 }
 
 /**
