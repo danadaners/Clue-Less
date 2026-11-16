@@ -40,6 +40,14 @@ export class Lobby {
     }
 
     /**
+     * Drops a leaving player's character claim so the seat can be reused.
+     * @param {string} playerId
+     */
+    removePlayer(playerId) {
+        this.#characterChoices.delete(playerId);
+    }
+
+    /**
      * If the host leaves, reassigns another host. 
      * @param {string[]} playerIds the remaining players, in join order
      */
