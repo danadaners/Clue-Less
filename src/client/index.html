@@ -104,6 +104,11 @@
       gap: 12px;
     }
 
+    #game-list li:hover {
+      border-bottom: 2px dashed var(--classic-blue);
+      font-weight: bold
+    }
+
     #game-list li+li,
     #player-list li+li {
       margin-top: 6px;
@@ -270,6 +275,11 @@
   <h1>Clue-Less</h1>
 
   <dialog id="dialog-box"></dialog>
+  <dialog id="disproof-overlay">
+        <p id="disproof-text"> PLAYER is has made the suggestion SUGGESTION. Choose a card to reveal to disprove their suggestion.</p>
+        <select id="disproof-select"></select>
+        <button id="disproof-submit" disabled="true">Disprove</button>
+    </dialog>
 
   <div class="name-field">
     <input id="display-name" type="text" maxlength="20" autocomplete="nickname" placeholder="enter your name"
@@ -332,6 +342,12 @@
       <h3>Your move</h3>
       <div id="move-actions"></div>
       <button id="end-turn-btn" class="btn btn--primary" hidden>End Turn</button>
+      <div id="suggest-panel" class="suggest-panel" hidden>
+        <h3>Make a suggestion</h3>
+        <select id="suggest-suspect" aria-label="Suspect"></select>
+        <select id="suggest-weapon" aria-label="Weapon"></select>
+        <button id="suggest-btn" class="btn">Make Suggestion</button>
+      </div>
       <div id="accuse-panel" class="accuse-panel" hidden>
         <h3>Make an accusation</h3>
         <p class="muted">If you're wrong, you're out of the game.</p>
@@ -348,6 +364,7 @@
     <ul id="hand-list"></ul>
     <h3>Players</h3>
     <ul id="game-player-list"></ul>
+
   </section>
 
   <script src="/socket.io/socket.io.js"></script>

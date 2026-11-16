@@ -10,6 +10,7 @@ import { Lobby } from "./game/Lobby.js";
 import {
   beginPlay,
   canEndTurn,
+  canSuggest,
   endTurn,
   listLegalMovesForPlayer,
   movePlayer,
@@ -124,10 +125,11 @@ function broadcastGameState(gameId, extra = {}) {
         stateVersion: state.stateVersion,
         legalMoves:
           state.turnPhase === TURN_PHASE.AWAITING_MOVE
-            ? listLegalMovesForPlayer(game, state.activePlayerId)
-            : [],
+          ? listLegalMovesForPlayer(game, state.activePlayerId)
+          : [],
         // after moving, or when blocked with no legal move (loses the move)
         canEndTurn: canEndTurn(game, state.activePlayerId),
+        canSuggest: canSuggest(game, state.activePlayerId)
       });
     }
   }

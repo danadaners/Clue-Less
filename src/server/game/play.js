@@ -330,6 +330,16 @@ export function canEndTurn(game, playerId) {
   );
 }
 
+export function canSuggest(game, playerId) {
+  if(!isPlayersTurn(game, playerId)) {
+    return false;
+  }
+
+  const characterId = characterIdForPlayer(game, playerId);
+  const location = game.board.tokenLocations.get(characterId);
+  return game.board.isRoom(location);
+}
+
 /**
  * @param {object} game
  * @param {string} playerId

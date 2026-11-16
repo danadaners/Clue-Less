@@ -49,6 +49,12 @@ const endTurnBtn = $("end-turn-btn");
 const gameActionError = $("game-action-error");
 const positionList = $("position-list");
 
+// Suggestion fields
+const suggestPanel = $("suggest-panel");
+const suggestBtn = $("suggest-btn");
+const disproofOverlay = $("disproof-overlay");
+const disproofSubmit = $("disproof-submit");
+
 // Accusation and game over
 const accusePanel = $("accuse-panel");
 const accuseBtn = $("accuse-btn");
@@ -101,6 +107,29 @@ function showDialog(message)
       privateMessageDialog.close();
   }, millisecondsToWait);
 
+}
+
+function joinGame(displayName, gameId)
+{
+  if (!displayName) {
+    showError("Name cannot be blank.");
+    return;
+  }
+  if (!gameId) {
+    showError("Game ID is required.");
+    return;
+  }
+  clearError();
+  socket.emit(CLIENT.JOIN_GAME, { displayName, gameId }, (res) => {
+    if (!res || !res.ok) {
+      showError(res?.error || "Could not join the game.");
+      return;
+    }
+
+    myPlayerId = res.playerId;
+    showLobby(res.gameId);
+    console.log(`Client: ${displayName} joined game ${res.gameId}`);
+  });
 }
 
 function renderPlayers(players) {
@@ -233,11 +262,12 @@ function clearMoveUi() {
   moveActions.replaceChildren();
   endTurnBtn.hidden = true;
   accusePanel.hidden = true;
+  suggestPanel.hidden = true;
   turnActions.hidden = true;
   gameActionError.textContent = "";
 }
 
-function renderMoveUi({ legalMoves = [], canEndTurn = false } = {}) {
+function renderMoveUi({ legalMoves = [], canEndTurn = false, canSuggest = false } = {}) {
   const mine = activePlayerId === myPlayerId;
   if (!mine || gameOver) {
     clearMoveUi();
@@ -262,6 +292,7 @@ function renderMoveUi({ legalMoves = [], canEndTurn = false } = {}) {
     moveActions.appendChild(button);
   }
 
+  suggestPanel.hidden = !canSuggest;
   endTurnBtn.hidden = !canEndTurn;
   // You can accuse any time on your turn, except while waiting for a disproval
   accusePanel.hidden = turnPhase === "awaiting_disproval";
@@ -271,9 +302,13 @@ function fillSelect(select, ids, label) {
   select.replaceChildren(new Option(`${label}…`, ""));
   for (const id of ids) select.appendChild(new Option(cardName({ id }), id));
 }
+
 fillSelect($("accuse-suspect"), Object.keys(CHARACTER_NAMES), "Suspect");
 fillSelect($("accuse-weapon"), WEAPON_IDS, "Weapon");
 fillSelect($("accuse-room"), ROOM_IDS, "Room");
+fillSelect($("suggest-suspect"), Object.keys(CHARACTER_NAMES), "Suspect");
+fillSelect($("suggest-weapon"), WEAPON_IDS, "Weapon");
+
 
 accuseBtn.addEventListener("click", () => {
   const suspectId = $("accuse-suspect").value;
@@ -290,6 +325,40 @@ accuseBtn.addEventListener("click", () => {
     }
   });
 });
+
+suggestBtn.addEventListener("click", () => {
+  const suspectId = $("suggest-suspect").value;
+  const weaponId = $("suggest-weapon").value;
+  if (!suspectId || !weaponId) {
+    gameActionError.textContent = "Choose a suspect and a weapon.";
+    return;
+  }
+  gameActionError.textContent = "";
+  socket.emit(CLIENT.MAKE_SUGGESTION, { suspectId, weaponId }, (res) => {
+    if (!res || !res.ok) {
+      gameActionError.textContent = res?.error || "Could not make the suggestion.";
+    }
+  });
+});
+
+disproofSubmit.addEventListener("click", () => {
+  const cardId = $("disproof-select").value;
+  if (!cardId)
+  {
+    gameActionError.textContent("Choose a card.");
+    return;
+  }
+  gameActionError.textContent = "";
+
+  socket.emit(CLIENT.SUBMIT_DISPROVAL, {cardId}, (res) => {
+    if (!res || !res.ok)
+    {
+      gameActionError.textContent = res?.error || "Could not submit the disproof.";
+    }
+  });
+  disproofOverlay.close();
+  disproofSubmit.disabled = true;
+})
 
 /** "Mr. Green with the Rope in the Kitchen" */
 function describeSolution({ suspectId, weaponId, roomId }) {
@@ -390,25 +459,7 @@ joinBtn.addEventListener("click", () => {
 joinSubmitBtn.addEventListener("click", () => {
   const displayName = nameInput.value.trim();
   const gameId = gameIdInput.value.trim().toUpperCase();
-  if (!displayName) {
-    showError("Name cannot be blank.");
-    return;
-  }
-  if (!gameId) {
-    showError("Game ID is required.");
-    return;
-  }
-  clearError();
-  socket.emit(CLIENT.JOIN_GAME, { displayName, gameId }, (res) => {
-    if (!res || !res.ok) {
-      showError(res?.error || "Could not join the game.");
-      return;
-    }
-
-    myPlayerId = res.playerId;
-    showLobby(res.gameId);
-    console.log(`Client: ${displayName} joined game ${res.gameId}`);
-  });
+  joinGame(displayName, gameId);
 });
 
 socket.on("gameList", (games) => {
@@ -428,6 +479,10 @@ socket.on("gameList", (games) => {
     id.className = "game-code";
     id.textContent = gameId;
     li.append(name, id);
+    li.addEventListener("click", () => {
+      const displayName = nameInput.value.trim();
+      joinGame(displayName, id.textContent);
+    });
     list.appendChild(li);
   }
 });
@@ -491,7 +546,27 @@ socket.on(PRIVATE.PLAYER_VIEW_UPDATE, (payload) => {
   renderMoveUi({
     legalMoves: payload.legalMoves || [],
     canEndTurn: Boolean(payload.canEndTurn),
+    canSuggest: Boolean(payload.canSuggest)
   });
+});
+
+socket.on(PRIVATE.DISPROVAL_REQUEST, (payload) => {
+  console.log("Client: disproval_request", payload);
+  const list = $("disproof-select");
+  list.replaceChildren(payload.matchingCardIds);
+  for (const card of payload.matchingCardIds) list.add(new Option(card, card));
+  const suspectId = payload.suspectId;
+  const weaponId = payload.weaponId;
+  const roomId = payload.roomId;
+  $("disproof-text").textContent = playerLabel(payload.suggestorId) + " made the suggestion: " + describeSolution({ suspectId, weaponId, roomId}) + ". Select a card to disprove their suggestion. ";
+  disproofOverlay.show();
+  disproofSubmit.disabled = false;
+});
+
+socket.on(PRIVATE.DISPROVAL_RESULT, (payload) =>
+{
+  console.log("Client: disproval_result", payload);
+  showDialog("Your suggestion has been disproven by " + playerLabel(payload.disproverId) + " with their card '" + cardName(payload.card) + "'");
 });
 
 socket.on(PRIVATE.MESSAGE, ({message}) => {
